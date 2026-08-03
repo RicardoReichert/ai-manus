@@ -2,7 +2,7 @@
   <SimpleBar>
     <div
       class="flex flex-col h-full flex-1 min-w-0 mx-auto w-full sm:min-w-[390px] px-5 justify-center items-start gap-2 relative max-w-full sm:max-w-full">
-      <!-- 顶部 header(结构复刻自 manus.im 首页头部,标题固定为 Manus、无下拉) -->
+      <!-- Header -->
       <div class="w-[calc(100%+40px)] -mx-5 bg-[var(--background-gray-main)] sticky top-0 z-10 ps-[14px] pe-[20px] py-[12px] border-b border-transparent">
         <div class="flex justify-between items-center w-full">
           <div class="relative z-20 overflow-hidden items-center flex-shrink-0 flex">
@@ -25,64 +25,67 @@
           </div>
         </div>
       </div>
-      <div class="max-md:px-[16px] mx-auto w-full max-w-full sm:max-w-[768px] sm:min-w-[360px] mt-[20vh] mb-auto">
-        <div class="w-full flex pl-4 items-center justify-start pb-4">
-          <span class="text-[var(--text-primary)] text-start font-serif text-[32px] leading-[40px]">
-            {{ $t('Hello') }}, {{ currentUser?.fullname }}
-            <br />
-            <span class="text-[var(--text-tertiary)]">
-              {{ $t('What can I do for you?') }}
-            </span>
+
+      <div class="w-full max-w-full sm:max-w-[680px] sm:min-w-[390px] mx-auto mt-auto mb-auto pb-[8vh]">
+        <div class="w-full flex flex-col items-center justify-center pb-8 gap-1">
+          <span v-if="greetingName" class="text-[var(--text-tertiary)] text-center font-serif text-[22px] leading-[30px]"
+            :style="{ fontFamily: serifFontFamily }">
+            {{ $t('Hello') }}, {{ greetingName }}
           </span>
+          <h1 class="text-[var(--text-primary)] text-center font-serif text-[36px] leading-[46px] sm:text-[40px] sm:leading-[52px]"
+            :style="{ fontFamily: serifFontFamily }">
+            {{ $t('What can I do for you?') }}
+          </h1>
         </div>
         <div class="flex flex-col gap-1 w-full">
-          <div class="flex flex-col w-full bg-[var(--background-gray-main)]">
-            <div class="[&amp;:not(:empty)]:pb-2 bg-[var(--background-gray-main)] rounded-[22px_22px_0px_0px]">
-            </div>
-            <ChatBox :rows="2" v-model="message" v-model:attachments="attachments" @submit="handleSubmit"
-              :isRunning="false" />
-          </div>
+          <ChatBox
+            ref="chatBoxRef"
+            v-model="message"
+            v-model:attachments="attachments"
+            :rows="1"
+            :isRunning="isSubmitting"
+            :hideStopButton="true"
+            @submit="handleSubmit"
+          />
         </div>
-        <!-- Suggestion chips (structure replicated from manus.im home) -->
-        <div class="relative w-full">
-          <div class="w-full transition-transform duration-300 ease-out relative mt-[20px]">
-            <div class="w-full flex flex-col justify-center items-center gap-4">
-              <div class="flex flex-wrap justify-center items-center gap-2">
-                <div v-for="suggestion in visibleSuggestions" :key="suggestion.label" role="button" tabindex="0"
-                  class="h-10 px-[14px] py-[7px] rounded-full border border-[var(--border-main)] flex justify-center items-center gap-2 clickable cursor-pointer hover:bg-[var(--fill-tsp-white-light)] flex-shrink-0"
-                  @click="handleSuggestionClick(suggestion)">
-                  <component :is="suggestion.icon" :size="18" color="var(--icon-tertiary)" />
-                  <div class="flex justify-start items-center gap-1">
-                    <span class="text-[var(--text-primary)] text-[14px] font-normal">{{ $t(suggestion.label) }}</span>
-                  </div>
-                </div>
-                <div v-if="!showMoreSuggestions" role="button" tabindex="0"
-                  class="h-10 px-[14px] text-sm py-[7px] rounded-full border border-[var(--border-main)] flex justify-center items-center gap-2 clickable cursor-pointer hover:bg-[var(--fill-tsp-white-light)] flex-shrink-0 text-[var(--text-primary)]"
-                  @click="showMoreSuggestions = true">
-                  {{ $t('More') }}
-                </div>
-              </div>
-            </div>
-          </div>
+        <div class="flex flex-wrap items-center gap-1.5 pt-2 justify-center">
+          <button
+            v-for="chip in visibleChips"
+            :key="chip.label"
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[var(--fill-tsp-white-main)] hover:bg-[var(--fill-tsp-white-dark)] text-[var(--text-secondary)] transition-colors clickable cursor-pointer"
+            @click="handleChipClick(chip)"
+          >
+            <component :is="chip.icon" :size="14" class="text-[var(--icon-tertiary)]" />
+            <span>{{ $t(chip.label) }}</span>
+          </button>
+
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[var(--fill-tsp-white-main)] hover:bg-[var(--fill-tsp-white-dark)] text-[var(--text-secondary)] transition-colors clickable cursor-pointer"
+            @click="showAllChips = !showAllChips"
+          >
+            <span>{{ showAllChips ? $t('Collapse') || 'Less' : $t('More') }}</span>
+          </button>
         </div>
       </div>
+
     </div>
   </SimpleBar>
 </template>
 
 <script setup lang="ts">
+import { ref, computed, onMounted, type FunctionalComponent } from 'vue';
 import SimpleBar from '../components/SimpleBar.vue';
-import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import ChatBox from '../components/ChatBox.vue';
 import { createSession } from '../api/agent';
 import { showErrorToast } from '../utils/toast';
 import {
-  Github, Presentation, Globe, Palette, Gamepad2,
-  Telescope, ChartColumn, Image, FileText
+  Github, Presentation, Globe, Palette,
+  Gamepad2, ChartColumn, FileText, Search, Table,
 } from 'lucide-vue-next';
-import type { Component } from 'vue';
 import type { FileInfo } from '../api/file';
 import { useFilePreviewer } from '../composables/useFilePreviewer';
 import { useAuth } from '../composables/useAuth';
@@ -97,35 +100,40 @@ const { hideFilePreviewer } = useFilePreviewer();
 const { currentUser } = useAuth();
 const showGithubButton = ref(false);
 const githubRepositoryUrl = ref('https://github.com/simpleyyt/ai-manus');
+const chatBoxRef = ref<InstanceType<typeof ChatBox> | null>(null);
 
-// Suggestion chips, structure replicated from the manus.im home page
-interface Suggestion {
+const serifFontFamily = 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif';
+
+const greetingName = computed(() => currentUser.value?.fullname || '');
+
+interface SuggestionChip {
   label: string;
-  icon: Component;
+  prompt: string;
+  icon: FunctionalComponent;
 }
 
-const primarySuggestions: Suggestion[] = [
-  { label: 'Create slides', icon: Presentation },
-  { label: 'Build website', icon: Globe },
-  { label: 'Design', icon: Palette },
-  { label: 'Create games', icon: Gamepad2 },
+const primaryChips: SuggestionChip[] = [
+  { label: 'Create slides', prompt: 'Create slides prompt', icon: Presentation },
+  { label: 'Build website', prompt: 'Build website prompt', icon: Globe },
+  { label: 'Design', prompt: 'Design prompt', icon: Palette },
+  { label: 'Create games', prompt: 'Create games prompt', icon: Gamepad2 },
 ];
 
-const moreSuggestions: Suggestion[] = [
-  { label: 'Deep research', icon: Telescope },
-  { label: 'Analyze data', icon: ChartColumn },
-  { label: 'Generate image', icon: Image },
-  { label: 'Write report', icon: FileText },
+const extraChips: SuggestionChip[] = [
+  { label: 'Analyze data', prompt: 'Analyze data prompt', icon: ChartColumn },
+  { label: 'Research', prompt: 'Research prompt', icon: Search },
+  { label: 'Write report', prompt: 'Write report prompt', icon: FileText },
+  { label: 'Create spreadsheet', prompt: 'Create spreadsheet prompt', icon: Table },
 ];
 
-const showMoreSuggestions = ref(false);
-
-const visibleSuggestions = computed(() =>
-  showMoreSuggestions.value ? [...primarySuggestions, ...moreSuggestions] : primarySuggestions
+const showAllChips = ref(false);
+const visibleChips = computed(() =>
+  showAllChips.value ? [...primaryChips, ...extraChips] : primaryChips
 );
 
-const handleSuggestionClick = (suggestion: Suggestion) => {
-  message.value = t(suggestion.label);
+const handleChipClick = (chip: SuggestionChip) => {
+  message.value = t(chip.prompt);
+  chatBoxRef.value?.focus();
 };
 
 onMounted(async () => {
@@ -142,15 +150,14 @@ const handleSubmit = async () => {
     isSubmitting.value = true;
 
     try {
-      // Create new Agent
       const session = await createSession();
       const sessionId = session.session_id;
 
-      // Navigate to new route with session_id, passing initial message via state
       router.push({
         path: `/chat/${sessionId}`,
         state: {
-          message: message.value, files: attachments.value.map((file: FileInfo) => ({
+          message: message.value,
+          files: attachments.value.map((file: FileInfo) => ({
             file_id: file.file_id,
             filename: file.filename,
             content_type: file.content_type,

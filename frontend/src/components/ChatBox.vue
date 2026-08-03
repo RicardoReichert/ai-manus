@@ -6,7 +6,7 @@
             <ChatBoxFiles ref="chatBoxFileListRef" :attachments="attachments"
                 @update:attachments="emit('update:attachments', $event)" />
             <div class="overflow-auto ps-4 pe-4 min-h-[46px] w-full text-[15px] leading-[24px]">
-                <textarea
+                <textarea ref="textareaRef"
                     class="flex rounded-md border-input focus-visible:outline-none focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 overflow-hidden flex-1 bg-transparent p-0 pt-[1px] border-0 focus-visible:ring-0 focus-visible:ring-offset-0 w-full placeholder:text-[var(--text-disable)] text-[15px] leading-[24px] shadow-none resize-none min-h-[40px]"
                     :rows="rows" :value="modelValue"
                     @input="$emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
@@ -69,6 +69,7 @@ const isComposing = ref(false);
 const chatBoxFileListRef = ref();
 const showPlusMenu = ref(false);
 const plusMenuRef = ref<HTMLElement | null>(null);
+const textareaRef = ref<HTMLTextAreaElement | null>(null);
 
 const props = withDefaults(defineProps<{
     modelValue: string;
@@ -129,6 +130,12 @@ const handleAddLocalFiles = () => {
     showPlusMenu.value = false;
     uploadFile();
 };
+
+const focus = () => {
+    textareaRef.value?.focus();
+};
+
+defineExpose({ focus });
 
 const onDocClick = (e: MouseEvent) => {
     if (showPlusMenu.value && plusMenuRef.value && !plusMenuRef.value.contains(e.target as Node)) {

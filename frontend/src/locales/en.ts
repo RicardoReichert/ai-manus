@@ -199,6 +199,16 @@ export default {
   'Take control': 'Take control',
   'View all files in this task': 'View all files in this task',
   'Share privacy tip': "Don't share personal information or third-party content without permission.",
+  'Assign a task or ask anything': 'Assign a task or ask anything',
+  // Home page suggestion chips
+  'Create slides prompt': 'Create a slide deck about ',
+  'Build website prompt': 'Build a website for ',
+  'Design prompt': 'Design a ',
+  'Create games prompt': 'Create a browser game about ',
+  'Analyze data prompt': 'Analyze this data and share key insights: ',
+  'Research prompt': 'Do in-depth research on ',
+  'Write report prompt': 'Write a detailed report about ',
+  'Create spreadsheet prompt': 'Create a spreadsheet to track ',
   // Shell tools
   'Executing command': 'Executing command',
   'Viewing command output': 'Viewing command output',
