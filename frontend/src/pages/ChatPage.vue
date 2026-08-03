@@ -6,9 +6,41 @@
       <div ref="observerRef"
         class="flex h-[56px] w-full shrink-0 items-center justify-between py-[12px] md:px-[24px] ps-[16px] pe-[20px] md:ps-[16px] md:pe-[20px] gap-1 border-b sticky top-0 z-10 flex-shrink-0 [-webkit-app-region:drag] bg-[var(--background-gray-main)] border-[var(--border-main)]">
         <div class="flex min-w-0 flex-1 items-center gap-1">
-          <div class="flex items-center pointer-events-auto overflow-hidden">
-            <div class="flex h-8 pt-[7px] md:pr-[6px] pr-[4px] pb-[7px] md:pl-[8px] pl-[6px] justify-center items-center gap-1 rounded-[8px]">
+          <div class="flex items-center pointer-events-auto overflow-hidden relative" ref="modeMenuRef">
+            <button
+              type="button"
+              class="flex h-8 pt-[7px] md:pr-[6px] pr-[4px] pb-[7px] md:pl-[8px] pl-[6px] justify-center items-center gap-1 rounded-[8px] clickable hover:bg-[var(--fill-tsp-white-light)]"
+              :aria-expanded="showModeMenu"
+              aria-haspopup="menu"
+              @click="showModeMenu = !showModeMenu">
               <span class="text-[var(--text-primary)] md:text-[18px] text-[16px] font-[500] md:leading-[22px] leading-[20px] truncate">Manus</span>
+              <span
+                v-if="taskMode === 'chat'"
+                class="text-[var(--text-tertiary)] text-xs flex h-5 py-0.5 px-1.5 items-center rounded-[6px] border border-[var(--border-dark)] flex-shrink-0">
+                Lite
+              </span>
+              <ChevronDown class="size-3.5 text-[var(--icon-tertiary)] shrink-0" :size="14" />
+            </button>
+            <div
+              v-if="showModeMenu"
+              role="menu"
+              class="absolute top-[calc(100%+6px)] left-0 z-50 min-w-[180px] rounded-[12px] border border-[var(--border-light)] bg-[var(--background-menu-white)] shadow-[0px_8px_32px_0px_var(--shadow-S)] p-1">
+              <button
+                type="button"
+                role="menuitem"
+                class="flex w-full items-center justify-between gap-2 px-3 py-2 rounded-[8px] text-sm text-[var(--text-primary)] hover:bg-[var(--fill-tsp-white-main)]"
+                @click="setTaskMode('agent')">
+                <span>{{ t('Agent') }}</span>
+                <Check v-if="taskMode === 'agent'" :size="16" class="text-[var(--icon-primary)]" />
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                class="flex w-full items-center justify-between gap-2 px-3 py-2 rounded-[8px] text-sm text-[var(--text-primary)] hover:bg-[var(--fill-tsp-white-main)]"
+                @click="setTaskMode('chat')">
+                <span>{{ t('Chat') }} · Lite</span>
+                <Check v-if="taskMode === 'chat'" :size="16" class="text-[var(--icon-primary)]" />
+              </button>
             </div>
           </div>
           <div class="flex-1 min-w-[16px]"></div>
@@ -132,7 +164,7 @@
           <!-- AgentIsTyping: only fill the empty gap before first visible turn output -->
           <LoadingIndicator v-if="showThinking" :text="$t('{name} is thinking', { name: 'Manus' })" />
           <!-- Official running spacer when work is already visible (tools/steps/messages) -->
-          <div v-else-if="isLoading" aria-hidden="true" class="h-5 invisible" />
+          <div v-else-if="isBusy" aria-hidden="true" class="h-5 invisible" />
         </div>
 
         <div class="flex flex-col bg-[var(--background-gray-main)] sticky bottom-0">
@@ -140,8 +172,11 @@
             class="flex items-center justify-center w-[36px] h-[36px] rounded-full bg-[var(--background-white-main)] hover:bg-[var(--background-gray-main)] clickable border border-[var(--border-main)] shadow-[0px_5px_16px_0px_var(--shadow-S),0px_0px_1.25px_0px_var(--shadow-S)] absolute -top-20 left-1/2 -translate-x-1/2">
             <ArrowDown class="text-[var(--icon-primary)]" :size="20" />
           </button>
-          <ChatBox v-model="inputMessage" v-model:attachments="attachments" :rows="1" @submit="handleSubmit"
-            :isRunning="isLoading" @stop="handleStop" :placeholder="chatPlaceholder" />
+          <TakeControlBanner
+            :visible="showTakeControlBanner"
+            @takeControl="handleTakeControl" />
+          <ChatBox v-model="inputMessage" v-model:attachments="attachments" :rows="1" dense @submit="handleSubmit"
+            :isRunning="isBusy" @stop="handleStop" :placeholder="chatPlaceholder" />
         </div>
       </div>
     </div>
@@ -162,12 +197,14 @@ import ChatBox from '../components/ChatBox.vue';
 import ChatMessage from '../components/ChatMessage.vue';
 import ChatTaskCompleted from '../components/ChatTaskCompleted.vue';
 import ChatWaitingContinue from '../components/ChatWaitingContinue.vue';
+import TakeControlBanner from '../components/TakeControlBanner.vue';
 import * as agentApi from '../api/agent';
-import { Message, MessageContent, ToolContent, AttachmentsContent, StepContent, isConsecutiveAssistant } from '../types/message';
-import { PlanEventData, AgentEvent, type AgentStatus, type TerminalUpdateEventData, type FileUpdateEventData } from '../types/event';
+import { Message, MessageContent, ToolContent, StepContent, isConsecutiveAssistant } from '../types/message';
+import { PlanEventData, AgentEvent, type TerminalUpdateEventData, type FileUpdateEventData } from '../types/event';
 import { useAgentEvents } from '../composables/useAgentEvents';
+import { useSessionPhase } from '../composables/useSessionPhase';
 import ComputerPanel from '../components/ComputerPanel.vue'
-import { ArrowDown, FileSearch, Lock, Globe, Link, Check, Ellipsis, Pencil, Star, Trash, FolderPlus, Folder, FolderSync, Pin } from 'lucide-vue-next';
+import { ArrowDown, FileSearch, Lock, Globe, Link, Check, Ellipsis, Pencil, Star, Trash, FolderPlus, Folder, FolderSync, Pin, ChevronDown } from 'lucide-vue-next';
 import ShareIcon from '@/components/icons/ShareIcon.vue';
 import { showErrorToast, showSuccessToast } from '../utils/toast';
 import type { FileInfo } from '../api/file';
@@ -196,7 +233,6 @@ const taskMode = ref<'agent' | 'chat'>('agent');
 // Create initial state factory
 const createInitialState = () => ({
   inputMessage: '',
-  isLoading: false,
   sessionId: undefined as string | undefined,
   messages: [] as Message[],
   realTime: true,
@@ -220,7 +256,6 @@ const state = reactive(createInitialState());
 // Destructure refs from reactive state
 const {
   inputMessage,
-  isLoading,
   sessionId,
   messages,
   realTime,
@@ -237,13 +272,27 @@ const {
   sharingLoading
 } = toRefs(state);
 
+const {
+  phase,
+  isBusy,
+  hydrateFromSessionStatus,
+  applyStatusUpdate,
+  noteOptimisticRun,
+  noteDomainEvent,
+  reset: resetPhase,
+  showWaitingContinue,
+  showTaskCompleted,
+  showThinking,
+} = useSessionPhase({ messages });
+
 // Non-state refs that don't need reset
 const computerPanel = ref<InstanceType<typeof ComputerPanel>>()
 const simpleBarRef = ref<InstanceType<typeof SimpleBar>>();
 const observerRef = ref<HTMLDivElement>();
 const chatContainerRef = ref<HTMLDivElement>();
 const moreBtnRef = ref<HTMLElement | null>(null);
-const sessionStatus = ref<SessionStatus | undefined>(undefined);
+const modeMenuRef = ref<HTMLElement | null>(null);
+const showModeMenu = ref(false);
 const { showContextMenu } = useContextMenu();
 
 const toolHistory = computed(() => {
@@ -259,7 +308,38 @@ const toolHistory = computed(() => {
   return tools;
 });
 
+const hasBrowserTool = computed(() =>
+  toolHistory.value.some((t) => t.name === 'browser'),
+);
+
+/** Official suggest-takeover banner: waiting + browser tool available */
+const showTakeControlBanner = computed(() =>
+  phase.value === 'waiting' && !isBusy.value && hasBrowserTool.value,
+);
+
 const chatPlaceholder = computed(() => t('Send message to Manus'));
+
+const setTaskMode = async (mode: 'agent' | 'chat') => {
+  showModeMenu.value = false;
+  if (!sessionId.value || taskMode.value === mode) return;
+  const prev = taskMode.value;
+  taskMode.value = mode;
+  try {
+    await agentApi.updateSessionTaskMode(sessionId.value, mode);
+  } catch (e) {
+    taskMode.value = prev;
+    console.error('Failed to update task mode', e);
+    showErrorToast(t('Failed to update mode'));
+  }
+};
+
+const handleModeMenuOutside = (e: MouseEvent) => {
+  if (!showModeMenu.value) return;
+  const el = modeMenuRef.value;
+  if (el && !el.contains(e.target as Node)) {
+    showModeMenu.value = false;
+  }
+};
 
 const lastAssistantIndex = computed(() => {
   for (let i = messages.value.length - 1; i >= 0; i--) {
@@ -274,50 +354,6 @@ const lastAssistantPlainText = computed(() => {
   return ((messages.value[i].content as MessageContent).content || '').trim();
 });
 
-/** Official waiting row: "{product} will continue after your reply" (message_ask_user → WaitEvent) */
-const showWaitingContinue = computed(() =>
-  sessionStatus.value === SessionStatus.WAITING && !isLoading.value,
-);
-
-/** Official TaskCompleted when agent stopped / session completed */
-const showTaskCompleted = computed(() =>
-  sessionStatus.value === SessionStatus.COMPLETED && !!lastAssistantPlainText.value && !isLoading.value,
-);
-
-/**
- * Official AgentIsTyping: show only while waiting for the first visible output
- * of the current turn. Once assistant text / tool / step appears, the content
- * itself is the status — keep "thinking" would contradict "doing".
- */
-const showThinking = computed(() => {
-  if (!isLoading.value) return false;
-  if (showWaitingContinue.value || showTaskCompleted.value) return false;
-
-  let lastUserIdx = -1;
-  for (let i = messages.value.length - 1; i >= 0; i--) {
-    const m = messages.value[i];
-    if (m.type === 'user') {
-      lastUserIdx = i;
-      break;
-    }
-    if (m.type === 'attachments' && (m.content as AttachmentsContent).role === 'user') {
-      lastUserIdx = i;
-      break;
-    }
-  }
-
-  for (let i = lastUserIdx + 1; i < messages.value.length; i++) {
-    const m = messages.value[i];
-    if (m.type === 'tool' || m.type === 'step') return false;
-    if (m.type === 'assistant') {
-      const text = ((m.content as MessageContent).content || '').trim();
-      if (text) return false;
-      // Empty assistant bubble → still typing (official)
-    }
-  }
-  return true;
-});
-
 /**
  * Official ChatReplyActions: show Copy under assistant replies that are not the
  * live last message (TaskCompleted footer owns copy when task is done).
@@ -326,7 +362,7 @@ const shouldShowAssistantCopyActions = (index: number) => {
   const m = messages.value[index];
   if (m?.type !== 'assistant') return false;
   if (!((m.content as MessageContent).content || '').trim()) return false;
-  if (isLoading.value || sessionStatus.value === SessionStatus.RUNNING || sessionStatus.value === SessionStatus.PENDING) {
+  if (isBusy.value || phase.value === 'running' || phase.value === 'pending') {
     return index !== lastAssistantIndex.value;
   }
   if (showTaskCompleted.value || showWaitingContinue.value) {
@@ -347,7 +383,7 @@ const isAssistantLastBeforeUser = (index: number) => {
 
 // Shared agent event -> message list conversion
 const { handleEvent: handleAgentEvent } = useAgentEvents(
-  { messages, title, plan, isLoading, lastEventId, lastTool, lastNoMessageTool },
+  { messages, title, plan, lastEventId, lastTool, lastNoMessageTool },
   {
     onToolActivity: (tool: ToolContent) => {
       if (realTime.value) {
@@ -359,42 +395,7 @@ const { handleEvent: handleAgentEvent } = useAgentEvents(
 
 const handleEvent = (event: AgentEvent) => {
   handleAgentEvent(event);
-  if (event.event === 'status_update') {
-    return;
-  }
-  if (event.event === 'done') {
-    sessionStatus.value = SessionStatus.COMPLETED;
-  } else if (event.event === 'wait') {
-    sessionStatus.value = SessionStatus.WAITING;
-  } else if (event.event === 'message' || event.event === 'tool' || event.event === 'step') {
-    if (sessionStatus.value !== SessionStatus.WAITING) {
-      sessionStatus.value = SessionStatus.RUNNING;
-    }
-  }
-};
-
-/** Drive loading / sessionStatus from authoritative WS status_update. */
-const applyAgentStatus = (agentStatus: AgentStatus) => {
-  if (agentStatus === 'running') {
-    isLoading.value = true;
-    sessionStatus.value = SessionStatus.RUNNING;
-  } else if (agentStatus === 'waiting') {
-    isLoading.value = false;
-    sessionStatus.value = SessionStatus.WAITING;
-  } else if (agentStatus === 'pending') {
-    isLoading.value = false;
-    sessionStatus.value = SessionStatus.PENDING;
-  } else if (agentStatus === 'error') {
-    isLoading.value = false;
-    // Keep sessionStatus as-is unless unknown; treat like completed for footer UX
-    if (sessionStatus.value === SessionStatus.RUNNING || sessionStatus.value === SessionStatus.PENDING) {
-      sessionStatus.value = SessionStatus.COMPLETED;
-    }
-  } else {
-    // completed
-    isLoading.value = false;
-    sessionStatus.value = SessionStatus.COMPLETED;
-  }
+  // Live phase authority is status_update only (backend-status-channel design).
 };
 
 // Reset all refs to their initial values
@@ -411,7 +412,7 @@ const resetState = () => {
 
   // Reset reactive state to initial values
   Object.assign(state, createInitialState());
-  sessionStatus.value = undefined;
+  resetPhase();
   isFavorite.value = false;
   isPinned.value = false;
   projectId.value = null;
@@ -462,7 +463,7 @@ const chatStreamCallbacks = (): agentApi.ChatStreamCallbacks => ({
     });
   },
   onStatusUpdate: (agentStatus) => {
-    applyAgentStatus(agentStatus);
+    applyStatusUpdate(agentStatus);
   },
   onClose: () => {
     // Loading is driven by status_update (follows stream_end). Do not clear here.
@@ -472,7 +473,7 @@ const chatStreamCallbacks = (): agentApi.ChatStreamCallbacks => ({
   },
   onError: (error) => {
     console.error('Chat error:', error);
-    isLoading.value = false;
+    noteDomainEvent('error');
     if (cancelCurrentChat.value) {
       cancelCurrentChat.value = null;
     }
@@ -492,24 +493,15 @@ const chat = async (message: string = '', files: FileInfo[] = []) => {
     cancelCurrentChat.value = null;
   }
 
-  if (message.trim()) {
-    // Add user message to conversation list
+  if (message.trim() || files.length > 0) {
+    // Official ChatQuestion: attachments + text in one right-aligned group
     messages.value.push({
       type: 'user',
       content: {
         content: message,
-        timestamp: Math.floor(Date.now() / 1000)
+        timestamp: Math.floor(Date.now() / 1000),
+        attachments: files.length > 0 ? files : undefined,
       } as MessageContent,
-    });
-  }
-
-  if (files.length > 0) {
-    messages.value.push({
-      type: 'attachments',
-      content: {
-        role: 'user',
-        attachments: files
-      } as AttachmentsContent,
     });
   }
 
@@ -519,7 +511,7 @@ const chat = async (message: string = '', files: FileInfo[] = []) => {
   // Clear input field and attachments
   inputMessage.value = '';
   attachments.value = [];
-  isLoading.value = true;
+  noteOptimisticRun();
 
   try {
     cancelCurrentChat.value = await agentApi.chatWithSession(
@@ -531,13 +523,13 @@ const chat = async (message: string = '', files: FileInfo[] = []) => {
       {
         ...chatStreamCallbacks(),
         onOpen: () => {
-          isLoading.value = true;
+          noteOptimisticRun();
         },
       }
     );
   } catch (error) {
     console.error('Chat error:', error);
-    isLoading.value = false;
+    noteDomainEvent('error');
     cancelCurrentChat.value = null;
   }
 }
@@ -550,27 +542,26 @@ const restoreSession = async () => {
   const session = await agentApi.getSession(sessionId.value);
   // Initialize share mode based on session state
   shareMode.value = session.is_shared ? 'public' : 'private';
-  sessionStatus.value = session.status as SessionStatus;
   isFavorite.value = !!session.is_favorite;
   isPinned.value = !!session.is_pinned;
   projectId.value = session.project_id ?? null;
   taskMode.value = session.task_mode === 'chat' ? 'chat' : 'agent';
   realTime.value = false;
+  hydrateFromSessionStatus(session.status);
   for (const event of session.events) {
-    handleEvent(event);
+    handleAgentEvent(event);
   }
   realTime.value = true;
 
   // Always join the chat channel (status_update + idle Mongo catch-up).
-  // Only resume the live Redis stream while the agent is running — idle join
-  // no longer emits stream_end, so this will not stick isLoading.
+  // Only resume the live Redis stream while the agent is running.
   if (cancelCurrentChat.value) {
     cancelCurrentChat.value();
     cancelCurrentChat.value = null;
   }
   try {
     if (session.status === SessionStatus.RUNNING) {
-      isLoading.value = true;
+      noteOptimisticRun();
       cancelCurrentChat.value = await agentApi.chatWithSession(
         sessionId.value,
         '',
@@ -579,7 +570,7 @@ const restoreSession = async () => {
         {
           ...chatStreamCallbacks(),
           onOpen: () => {
-            isLoading.value = true;
+            noteOptimisticRun();
           },
         },
       );
@@ -594,7 +585,7 @@ const restoreSession = async () => {
     }
   } catch (error) {
     console.error('Failed to join chat session:', error);
-    isLoading.value = false;
+    noteDomainEvent('error');
     cancelCurrentChat.value = null;
   }
   agentApi.clearUnreadMessageCount(sessionId.value);
@@ -616,6 +607,7 @@ onBeforeRouteUpdate((to, _, next) => {
 
 // Initialize active conversation
 onMounted(() => {
+  document.addEventListener('mousedown', handleModeMenuOutside);
   hideFilePreviewer();
   const routeParams = router.currentRoute.value.params;
   if (routeParams.sessionId) {
@@ -634,6 +626,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  document.removeEventListener('mousedown', handleModeMenuOutside);
   const prevSessionId = sessionId.value;
   if (cancelCurrentChat.value) {
     cancelCurrentChat.value();
