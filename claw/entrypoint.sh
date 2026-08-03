@@ -19,8 +19,13 @@ if [ -z "${OPENCLAW_GATEWAY_TOKEN}" ]; then
     export OPENCLAW_GATEWAY_TOKEN
 fi
 
+# Clean up MANUS_API_BASE_URL so appending /v1 does not produce /v1/v1
+MANUS_BASE="${MANUS_API_BASE_URL:-http://backend:8000}"
+MANUS_BASE="${MANUS_BASE%/v1}"
+MANUS_BASE="${MANUS_BASE%/}"
+
 echo "[entrypoint] Gateway token: ${OPENCLAW_GATEWAY_TOKEN}"
-echo "[entrypoint] Manus API base URL: ${MANUS_API_BASE_URL:-http://backend:8000}/v1"
+echo "[entrypoint] Manus API base URL: ${MANUS_BASE}/v1"
 
 # Write openclaw.json configuration
 cat > "${CONFIG_FILE}" << EOF
@@ -52,7 +57,7 @@ cat > "${CONFIG_FILE}" << EOF
   "plugins": {
     "load": {
       "paths": [
-        "/home/node/.openclaw/extensions/manus-claw"
+        "/home/node/.openclaw/extensions"
       ]
     },
     "entries": {
@@ -85,7 +90,7 @@ cat > "${CONFIG_FILE}" << EOF
     "mode": "merge",
     "providers": {
       "manus-proxy": {
-        "baseUrl": "${MANUS_API_BASE_URL:-http://backend:8000}/v1",
+        "baseUrl": "${MANUS_BASE}/v1",
         "apiKey": "${MANUS_API_KEY}",
         "api": "openai-completions",
         "models": [

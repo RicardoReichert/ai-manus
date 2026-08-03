@@ -3,11 +3,13 @@ FROM ghcr.io/openclaw/openclaw:latest
 # Switch to root to install plugin dependencies
 USER root
 
-# Setup manus-claw plugin
-RUN mkdir -p /home/node/.openclaw/extensions/manus-claw
+# Setup manus-claw plugin in stock extensions and openclaw user dir
+RUN mkdir -p /app/extensions/manus-claw /home/node/.openclaw/extensions/manus-claw
+COPY manus-claw/ /app/extensions/manus-claw/
 COPY manus-claw/ /home/node/.openclaw/extensions/manus-claw/
+RUN cd /app/extensions/manus-claw && npm install --production
 RUN cd /home/node/.openclaw/extensions/manus-claw && npm install --production
-RUN chown -R node:node /home/node/.openclaw
+RUN chown -R node:node /app/extensions /home/node/.openclaw
 
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh

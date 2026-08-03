@@ -48,6 +48,8 @@ class LangchainLLM:
             max_tokens=settings.max_tokens,
             base_url=settings.api_base,
         )
+        if settings.api_key:
+            kwargs["api_key"] = settings.api_key
         if settings.extra_headers:
             kwargs["default_headers"] = settings.extra_headers
         self._model = init_chat_model(**kwargs)
