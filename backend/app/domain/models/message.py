@@ -42,6 +42,7 @@ class LLMMessage(BaseModel):
     # Raw tool result object, kept only in memory for event rendering; never
     # persisted (excluded from model_dump).
     artifact: Optional[Any] = Field(default=None, exclude=True)
+    additional_kwargs: Dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("content", mode="before")
     @classmethod
@@ -53,20 +54,26 @@ class LLMMessage(BaseModel):
     # ------------------------------------------------------------------
 
     @classmethod
-    def system(cls, content: str) -> "LLMMessage":
-        return cls(role=Role.SYSTEM, content=content)
+    def system(cls, content: str, additional_kwargs: Optional[Dict[str, Any]] = None) -> "LLMMessage":
+        return cls(role=Role.SYSTEM, content=content, additional_kwargs=additional_kwargs or {})
 
     @classmethod
-    def user(cls, content: str) -> "LLMMessage":
-        return cls(role=Role.USER, content=content)
+    def user(cls, content: str, additional_kwargs: Optional[Dict[str, Any]] = None) -> "LLMMessage":
+        return cls(role=Role.USER, content=content, additional_kwargs=additional_kwargs or {})
 
     @classmethod
     def assistant(
         cls,
         content: str = "",
         tool_calls: Optional[List[ToolCall]] = None,
+        additional_kwargs: Optional[Dict[str, Any]] = None,
     ) -> "LLMMessage":
-        return cls(role=Role.ASSISTANT, content=content, tool_calls=tool_calls or [])
+        return cls(
+            role=Role.ASSISTANT,
+            content=content,
+            tool_calls=tool_calls or [],
+            additional_kwargs=additional_kwargs or {},
+        )
 
     @classmethod
     def tool(
@@ -75,6 +82,7 @@ class LLMMessage(BaseModel):
         name: str,
         content: str,
         artifact: Any = None,
+        additional_kwargs: Optional[Dict[str, Any]] = None,
     ) -> "LLMMessage":
         return cls(
             role=Role.TOOL,
@@ -82,4 +90,5 @@ class LLMMessage(BaseModel):
             tool_call_id=tool_call_id,
             name=name,
             artifact=artifact,
+            additional_kwargs=additional_kwargs or {},
         )

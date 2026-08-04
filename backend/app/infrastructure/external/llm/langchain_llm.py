@@ -46,8 +46,9 @@ class LangchainLLM:
             model_provider=settings.model_provider,
             temperature=settings.temperature,
             max_tokens=settings.max_tokens,
-            base_url=settings.api_base,
         )
+        if settings.api_base and settings.model_provider != "google_genai":
+            kwargs["base_url"] = settings.api_base
         if settings.api_key:
             kwargs["api_key"] = settings.api_key
         if settings.extra_headers:
@@ -67,10 +68,11 @@ class LangchainLLM:
     def _to_langchain(self, messages: List[LLMMessage]) -> List[Any]:
         lc_messages: List[Any] = []
         for m in messages:
+            additional_kwargs = getattr(m, "additional_kwargs", {}) or {}
             if m.role == Role.SYSTEM:
-                lc_messages.append(SystemMessage(content=m.content))
+                lc_messages.append(SystemMessage(content=m.content, additional_kwargs=additional_kwargs))
             elif m.role == Role.USER:
-                lc_messages.append(HumanMessage(content=m.content))
+                lc_messages.append(HumanMessage(content=m.content, additional_kwargs=additional_kwargs))
             elif m.role == Role.ASSISTANT:
                 tool_calls = [
                     {
@@ -82,7 +84,7 @@ class LangchainLLM:
                     for tc in m.tool_calls
                 ]
                 lc_messages.append(
-                    AIMessage(content=m.content, tool_calls=tool_calls)
+                    AIMessage(content=m.content, tool_calls=tool_calls, additional_kwargs=additional_kwargs)
                 )
             elif m.role == Role.TOOL:
                 lc_messages.append(
@@ -90,6 +92,7 @@ class LangchainLLM:
                         tool_call_id=m.tool_call_id or "",
                         name=m.name,
                         content=m.content,
+                        additional_kwargs=additional_kwargs,
                     )
                 )
         return lc_messages
@@ -110,7 +113,12 @@ class LangchainLLM:
             content = ""
         else:
             content = str(raw)
-        return LLMMessage.assistant(content=content, tool_calls=tool_calls)
+        additional_kwargs = getattr(message, "additional_kwargs", {}) or {}
+        return LLMMessage.assistant(
+            content=content,
+            tool_calls=tool_calls,
+            additional_kwargs=additional_kwargs,
+        )
 
     # ------------------------------------------------------------------
     # LLM Protocol

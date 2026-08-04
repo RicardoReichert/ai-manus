@@ -24,8 +24,9 @@ class PlaywrightBrowser:
             model_provider=self.settings.model_provider,
             temperature=self.settings.temperature,
             max_tokens=self.settings.max_tokens,
-            base_url=self.settings.api_base,
         )
+        if self.settings.api_base and self.settings.model_provider != "google_genai":
+            kwargs["base_url"] = self.settings.api_base
         if self.settings.extra_headers:
             kwargs["default_headers"] = self.settings.extra_headers
         self._model = init_chat_model(**kwargs)
