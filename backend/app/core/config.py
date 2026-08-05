@@ -170,7 +170,16 @@ class Settings(BaseSettings):
 
     # Model registry configuration. JSON file declaring the selectable models,
     # mounted the same way as mcp.json. See models.json.example.
+    # Legacy: only read by scripts/import_models.py to seed the database on
+    # migration; the registry itself is database-backed (ModelConfigDocument).
     models_config_path: str = "/etc/models.json"
+
+    # Fernet key encrypting provider credentials at rest (ModelConfigDocument).
+    # Required to store or read model API keys — there is intentionally no
+    # fallback, so rotating other secrets can never silently orphan them.
+    # Generate with: python -c "from cryptography.fernet import Fernet; \
+    #   print(Fernet.generate_key().decode())"
+    model_encryption_key: str | None = None
     
     # Logging configuration
     log_level: str = "INFO"
