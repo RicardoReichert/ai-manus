@@ -37,7 +37,13 @@ router = APIRouter(prefix="/admin/models", tags=["admin-models"])
 # a plain HTTP client indefinitely — there is no default client-side timeout
 # anywhere in this call chain. Without a cap, one bad test-connection request
 # ties up a worker forever instead of reporting the failure it's meant to catch.
-_TEST_CONNECTION_TIMEOUT_SECONDS = 20.0
+#
+# 60s rather than something shorter: this probe runs a real chat completion,
+# not just a reachability check, and a local runtime (LM Studio, Ollama) that
+# hasn't loaded the model into memory yet pays a real cold-load cost — often
+# well past 20s for anything above a few billion parameters — before it can
+# answer at all. A reachable-but-cold local model must not read as "broken".
+_TEST_CONNECTION_TIMEOUT_SECONDS = 60.0
 
 
 def _require_admin(user: User) -> None:
@@ -208,8 +214,11 @@ async def test_model_connection(
         logger.warning("Connection test timed out for model %s", model_config_id)
         return APIResponse.success(TestModelConnectionResponse(
             ok=False,
-            error=f"No response within {int(_TEST_CONNECTION_TIMEOUT_SECONDS)}s. "
-                  f"Check that base_url is reachable from the backend container.",
+            error=(
+                f"No response within {int(_TEST_CONNECTION_TIMEOUT_SECONDS)}s. "
+                f"Check that base_url is reachable from the backend container, or — for a "
+                f"local model — that it isn't still loading into memory for the first time."
+            ),
         ))
     except Exception as e:
         logger.warning("Connection test failed for model %s: %s", model_config_id, e)

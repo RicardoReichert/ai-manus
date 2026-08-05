@@ -107,8 +107,8 @@
           <input v-model="form.name" class="settings-input" :placeholder="t('e.g. GPT-4o')" />
         </FormField>
 
-        <FormField v-if="!editingId" :label="t('Registry ID')" :hint="t('Used internally; cannot be changed after creation.')">
-          <input v-model="form.id" class="settings-input" placeholder="my-gpt-4o" />
+        <FormField v-if="!editingId" :label="t('Registry ID')" :hint="t('Used internally; cannot be changed after creation. Letters, numbers, \'.\', \'_\', \'-\' only — it becomes part of a URL, so it cannot contain \'/\'.')">
+          <input v-model="form.id" class="settings-input" placeholder="my-gpt-4o" @input="sanitizeId" />
         </FormField>
 
         <FormField :label="t('Model name')" :hint="t('The exact name the provider expects.')">
@@ -257,6 +257,22 @@ function resetForm() {
   form.tool_profile = 'full'
   formError.value = ''
   selectedPresetId.value = 'openai'
+}
+
+// Mirrors the backend's _ID_PATTERN (interfaces/schemas/model_config.py):
+// the id is embedded as a single URL path segment on every route but create
+// (GET/PATCH/DELETE/test all key off it). A '/' — natural to type, since
+// that's how provider model names look ("google/gemma-4-e4b") — makes every
+// follow-up action 404 even though creation itself succeeds, because FastAPI
+// reads it as two path segments. Stripped live so it can't be typed at all,
+// rather than only caught after a failed save.
+function sanitizeId(event: Event) {
+  const input = event.target as HTMLInputElement
+  const sanitized = input.value.replace(/[^A-Za-z0-9._-]/g, '')
+  if (sanitized !== input.value) {
+    input.value = sanitized
+  }
+  form.id = sanitized
 }
 
 function applyPreset(preset: ModelProviderPreset) {

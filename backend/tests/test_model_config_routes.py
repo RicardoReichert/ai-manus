@@ -183,6 +183,33 @@ class TestCreateModel:
         assert response.status_code == 200
         assert response.json()["data"]["has_api_key"] is False
 
+    def test_an_id_containing_a_slash_is_rejected(self, client, admin_headers):
+        """A '/' in the id makes it two URL path segments on every follow-up
+        route (test/edit/delete), so creation must reject it up front rather
+        than let a model be created and then be unreachable by every other
+        action."""
+        response = client.post(
+            f"{BASE_URL}/admin/models",
+            json={
+                "id": f"{TEST_MODEL_ID_PREFIX}google/gemma-4-e4b",
+                "name": "Bad", "provider": "openai", "model": "google/gemma-4-e4b",
+            },
+            headers=admin_headers,
+        )
+        assert response.status_code == 422
+
+    def test_a_model_name_containing_a_slash_is_fine(self, client, admin_headers):
+        """The restriction is on the id (URL segment), not the provider's
+        real model name — "google/gemma-4-e4b", "anthropic/claude-3.5-sonnet"
+        style names are exactly what admins need to type here."""
+        model_id = _unique_model_id("gemma")
+        response = client.post(
+            f"{BASE_URL}/admin/models",
+            json={"id": model_id, "name": "Gemma", "provider": "openai", "model": "google/gemma-4-e4b"},
+            headers=admin_headers,
+        )
+        assert response.status_code == 200, response.text
+
 
 class TestUpdateModel:
     def _create(self, client, admin_headers, **overrides):

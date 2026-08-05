@@ -4,12 +4,32 @@ The credential is strictly write-only across this boundary: requests may
 carry ``api_key``, responses never do — only ``api_key_hint`` (e.g. "…wxyz")
 so an operator can tell which key is stored.
 """
+import re
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.models.model_capabilities import ModelCapabilities
 from app.domain.models.model_config import ModelConfig
+
+# The registry id is embedded as a single URL path segment on every route but
+# create (GET/PATCH/DELETE/test all key off it), so it must be one path
+# segment's worth of characters. In particular no "/": a provider's real
+# model name legitimately contains one (e.g. "google/gemma-4-e4b",
+# OpenRouter's "anthropic/claude-3.5-sonnet") — that belongs in `model`, not
+# `id` — but if it ends up in `id`, FastAPI reads it as *two* path segments
+# and every follow-up action 404s despite creation having just succeeded.
+_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _validate_registry_id(value: str) -> str:
+    if not _ID_PATTERN.match(value):
+        raise ValueError(
+            "must contain only letters, numbers, '.', '_', '-' (no '/' or spaces) — "
+            "it becomes part of a URL. Put the provider's real model name, "
+            "slashes included, in the Model field instead."
+        )
+    return value
 
 
 class ModelCapabilitiesSchema(BaseModel):
@@ -39,6 +59,8 @@ class CreateModelConfigRequest(BaseModel):
     capabilities: Optional[ModelCapabilitiesSchema] = None
     tool_profile: str = "full"
     enabled_tools: List[str] = Field(default_factory=list)
+
+    _validate_id = field_validator("id")(_validate_registry_id)
 
 
 class UpdateModelConfigRequest(BaseModel):

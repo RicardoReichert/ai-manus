@@ -1,5 +1,14 @@
 <template>
-    <div v-if="dialogVisible" class="absolute z-[1000] pointer-events-auto">
+    <!--
+      z-[1100], strictly above the Settings dialog's z-[1000] (DialogContent.vue):
+      this is a global singleton confirm dialog (mounted once in MainLayout, not
+      teleported/portalled), so when it's triggered from *inside* another modal
+      (e.g. deleting a model in Settings > Models) it must out-rank that modal's
+      stacking context outright — matching z-index falls back to DOM order, and
+      a portalled dialog mounted later in <body> would otherwise paint over this
+      one, making it invisible and unclickable even though it's technically open.
+    -->
+    <div v-if="dialogVisible" class="absolute z-[1100] pointer-events-auto">
         <div class="w-full h-full bg-black/60 backdrop-blur-[4px] fixed inset-0 data-[state=open]:animate-dialog-bg-fade-in data-[state=closed]:animate-dialog-bg-fade-out"
             style="position: fixed; overflow: auto; inset: 0px;" @click="handleBackdropClick"></div>
         <div role="dialog"
