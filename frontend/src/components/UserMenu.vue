@@ -84,6 +84,16 @@
                                 class="overflow-hidden flex-1 text-sm font-medium leading-5 whitespace-nowrap text-ellipsis">{{
                                 t('Documentation') }}</span>
                         </a>
+                        <div
+                            class="flex gap-3 items-center p-2 rounded-lg cursor-pointer text-[var(--text-primary)] hover:bg-[var(--fill-tsp-white-main)]"
+                            @click="handleDataControlsClick">
+                            <div class="flex-shrink-0 w-5 h-5">
+                                <ShieldCheck :size="20" />
+                            </div>
+                            <span
+                                class="overflow-hidden flex-1 text-sm font-medium leading-5 whitespace-nowrap text-ellipsis">{{
+                                t('Data Controls') }}</span>
+                        </div>
                         <div class="w-full h-[1px] my-1 bg-[var(--border-main)]"></div>
                         <div v-if="authProvider !== 'none'"
                             class="flex gap-3 items-center p-2 rounded-lg cursor-pointer hover:bg-[var(--fill-tsp-white-main)] text-[var(--function-error)]"
@@ -109,7 +119,7 @@ import { useI18n } from 'vue-i18n';
 import { useAuth } from '../composables/useAuth';
 import { useSettingsDialog } from '../composables/useSettingsDialog';
 import { getCachedAuthProvider } from '../api/config';
-import { LogOut, User, Settings2, LayoutGrid, Home, CircleHelp, FileText } from 'lucide-vue-next';
+import { LogOut, User, Settings2, LayoutGrid, Home, CircleHelp, FileText, ShieldCheck } from 'lucide-vue-next';
 
 const router = useRouter();
 const { t } = useI18n();
@@ -149,6 +159,11 @@ const handleHomeClick = () => {
 // Handle Get help click - open settings dialog on Help tab (docs + issues)
 const handleHelpClick = () => {
     openSettingsDialog('help');
+};
+
+// Handle Data Controls click - navigate to the shared/archived tasks page (12.1)
+const handleDataControlsClick = () => {
+    router.push('/data-controls');
 };
 
 // Handle logout action

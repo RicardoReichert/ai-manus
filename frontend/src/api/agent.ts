@@ -36,8 +36,10 @@ export async function getSession(sessionId: string): Promise<GetSessionResponse>
   return response.data.data;
 }
 
-export async function getSessions(): Promise<ListSessionResponse> {
-  const response = await apiClient.get<ApiResponse<ListSessionResponse>>('/sessions');
+export async function getSessions(filters?: { archived?: boolean; shared?: boolean }): Promise<ListSessionResponse> {
+  const response = await apiClient.get<ApiResponse<ListSessionResponse>>('/sessions', {
+    params: filters,
+  });
   return response.data.data;
 }
 
