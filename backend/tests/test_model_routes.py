@@ -56,13 +56,29 @@ class TestGetModels:
         response = client.get(f"{BASE_URL}/models", headers=auth_headers)
         assert response.status_code == 200
         models = response.json()["data"]
+        # The registry is database-backed now, so there is no synthesized
+        # "default" entry — only what an admin registered (or the importer
+        # seeded). Any non-empty registry satisfies the contract.
         assert len(models) >= 1
-        assert any(m["id"] == "default" for m in models)
         for m in models:
             # ModelSummary intentionally omits base_url/api_key_env — the
             # browser has no use for internal endpoint topology.
             assert "base_url" not in m
             assert "api_key_env" not in m
+
+
+def _first_registered_model_id(client, auth_headers) -> str:
+    """Pick a real model id from the registry.
+
+    Nothing is guaranteed to be called "default" any more, so tests that need
+    a valid id have to ask the registry for one.
+    """
+    response = client.get(f"{BASE_URL}/models", headers=auth_headers)
+    assert response.status_code == 200
+    models = response.json()["data"]
+    if not models:
+        pytest.skip("No models registered; run scripts.import_models first")
+    return models[0]["id"]
 
 
 class TestCreateSessionModelValidation:
@@ -75,9 +91,10 @@ class TestCreateSessionModelValidation:
         assert response.status_code == 400
 
     def test_known_model_name_is_accepted(self, client, auth_headers):
+        model_id = _first_registered_model_id(client, auth_headers)
         response = client.put(
             f"{BASE_URL}/sessions",
-            json={"model_name": "default"},
+            json={"model_name": model_id},
             headers=auth_headers,
         )
         assert response.status_code == 200
@@ -101,19 +118,20 @@ class TestUpdateSessionModel:
     def test_valid_model_persists_and_is_readable(self, client, auth_headers):
         session_id = self._create_session(client, auth_headers)
 
+        model_id = _first_registered_model_id(client, auth_headers)
         patch_response = client.patch(
             f"{BASE_URL}/sessions/{session_id}/model",
-            json={"model_name": "default"},
+            json={"model_name": model_id},
             headers=auth_headers,
         )
         assert patch_response.status_code == 200
         patch_data = patch_response.json()["data"]
-        assert patch_data["model_name"] == "default"
+        assert patch_data["model_name"] == model_id
 
         # GET /sessions/{id} must echo the persisted model (regression guard
         # for the field being dropped from the response).
         get_response = client.get(f"{BASE_URL}/sessions/{session_id}", headers=auth_headers)
         assert get_response.status_code == 200
         session_data = get_response.json()["data"]
-        assert session_data["model_name"] == "default"
+        assert session_data["model_name"] == model_id
         assert session_data["model_provider"]

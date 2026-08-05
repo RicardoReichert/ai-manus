@@ -36,6 +36,8 @@ from app.domain.services.claw_domain_service import ClawDomainService
 from app.application.services.project_service import ProjectService
 from app.infrastructure.repositories.mongo_project_repository import MongoProjectRepository
 from app.infrastructure.repositories.mongo_file_favorite_repository import MongoFileFavoriteRepository
+from app.infrastructure.repositories.mongo_model_config_repository import MongoModelConfigRepository
+from app.domain.repositories.model_config_repository import ModelConfigRepository
 
 
 # Configure logging
@@ -189,6 +191,12 @@ def get_token_service() -> TokenService:
     """Get token service instance"""
     logger.info("Creating TokenService instance")
     return TokenService()
+
+
+@lru_cache()
+def get_model_config_repository() -> ModelConfigRepository:
+    """Get the admin-managed model registry repository"""
+    return MongoModelConfigRepository()
 
 
 @lru_cache()

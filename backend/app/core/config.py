@@ -9,26 +9,6 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 
-class ModelDescriptor(BaseModel):
-    """A selectable LLM, as declared in the model registry file.
-
-    ``id`` is an opaque registry key (what a session persists in
-    ``Session.model_name``); ``model`` is the real model name handed to the
-    provider SDK. Keeping them separate lets the registry expose a stable,
-    human-chosen key without constraining the provider's naming.
-    """
-    id: str
-    name: str
-    provider: str
-    model: str
-    base_url: str | None = None
-    is_local: bool = False
-    description: str | None = None
-    # Name of the environment variable holding this model's credential.
-    # Falls back to the global API_KEY when unset.
-    api_key_env: str | None = None
-
-
 def _parse_extra_headers() -> dict | None:
     raw = os.environ.get("EXTRA_HEADERS")
     if not raw:

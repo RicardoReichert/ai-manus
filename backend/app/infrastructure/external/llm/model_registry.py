@@ -1,103 +1,95 @@
-import json
-import logging
-import os
-import time
-from typing import Dict, List, Optional
+"""Database-backed registry of selectable models.
 
-from app.core.config import ModelDescriptor, get_settings
+Formerly parsed ``models.json`` and resolved credentials through per-model
+environment variables. Both are gone: models are registered by an admin
+through the API and stored in MongoDB (``ModelConfigDocument``) with their
+credentials encrypted at rest.
+
+The short read-through cache is kept — the registry is consulted on every
+model resolution (chat, Claw proxy, session validation) and changes only when
+an admin edits it, so a few seconds of staleness is a good trade. Admin
+mutations call :func:`invalidate_registry_cache` directly, making edits take
+effect immediately rather than after the TTL.
+"""
+import logging
+import time
+from typing import List, Optional
+
+from app.domain.models.model_config import ModelConfig
 
 logger = logging.getLogger(__name__)
 
-# The registry file is re-read at most once per window, so editing
-# models.json takes effect without a restart but costs no I/O per request.
 _CACHE_TTL_SECONDS = 30.0
 
-_cache: Optional[List[ModelDescriptor]] = None
+_cache: Optional[List[ModelConfig]] = None
 _cache_at: float = 0.0
+# Last successful read, kept separately from the TTL cache so that a database
+# blip degrades to stale-but-working instead of "no models available" — which
+# would surface to users as chat being broken. Deliberately survives
+# invalidation, since an admin edit is exactly when the TTL cache is empty and
+# a failed re-read would otherwise leave nothing to serve.
+_last_good: Optional[List[ModelConfig]] = None
 
 
-def invalidate_registry_cache() -> None:
-    """Drop the cached registry. Used by tests and after config changes."""
-    global _cache, _cache_at
+def invalidate_registry_cache(drop_last_good: bool = False) -> None:
+    """Drop the cached registry. Called after admin edits, and by tests.
+
+    ``drop_last_good`` also clears the resilience copy; tests use it to assert
+    on a genuinely cold registry.
+    """
+    global _cache, _cache_at, _last_good
     _cache = None
     _cache_at = 0.0
+    if drop_last_good:
+        _last_good = None
 
 
-def _default_model() -> ModelDescriptor:
-    """The globally configured model, always offered as ``id="default"``.
+def _repository():
+    # Imported lazily: the DI container imports this module, so a module-level
+    # import would be circular.
+    from app.interfaces.dependencies import get_model_config_repository
+    return get_model_config_repository()
 
-    Guarantees there is at least one selectable model even with no registry
-    file present, so the app works with zero extra configuration.
+
+async def get_all_available_models() -> List[ModelConfig]:
+    """Every enabled model, in admin-defined order.
+
+    Returns an empty list on a fresh install. Callers must handle that — see
+    ``scripts/import_models.py`` for seeding an existing deployment, and the
+    admin UI's empty state.
     """
-    settings = get_settings()
-    return ModelDescriptor(
-        id="default",
-        name=settings.model_name,
-        provider=settings.model_provider,
-        model=settings.model_name,
-        base_url=settings.api_base,
-        is_local=False,
-        description="Model configured via MODEL_NAME / MODEL_PROVIDER",
-    )
-
-
-def _load_file_models() -> List[ModelDescriptor]:
-    """Load registry entries from ``models_config_path``.
-
-    A missing file is normal (zero-config deployments). A malformed file is
-    logged and ignored rather than crashing boot, matching how EXTRA_HEADERS
-    is handled in core.config.
-    """
-    path = get_settings().models_config_path
-    if not path or not os.path.exists(path):
-        return []
-
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            raw = json.load(f)
-    except (OSError, json.JSONDecodeError) as e:
-        logger.warning(f"Could not read model registry at {path}, ignoring: {e}")
-        return []
-
-    entries = raw.get("models") if isinstance(raw, dict) else raw
-    if not isinstance(entries, list):
-        logger.warning(
-            f"Model registry at {path} must be a list or {{\"models\": [...]}}, ignoring"
-        )
-        return []
-
-    models: List[ModelDescriptor] = []
-    for entry in entries:
-        try:
-            models.append(ModelDescriptor(**entry))
-        except Exception as e:
-            logger.warning(f"Skipping invalid model registry entry {entry!r}: {e}")
-    return models
-
-
-async def get_all_available_models() -> List[ModelDescriptor]:
-    """All selectable models: the global default first, then registry entries.
-
-    Deduplicated by ``id``, so a file entry with ``id="default"`` deliberately
-    overrides the synthesized one.
-    """
-    global _cache, _cache_at
+    global _cache, _cache_at, _last_good
 
     now = time.monotonic()
     if _cache is not None and (now - _cache_at) < _CACHE_TTL_SECONDS:
         return _cache
 
-    models_by_id: Dict[str, ModelDescriptor] = {"default": _default_model()}
-    for desc in _load_file_models():
-        models_by_id[desc.id] = desc
+    try:
+        models = await _repository().list_all(enabled_only=True)
+    except Exception as e:
+        # A registry read failure must not take down chat entirely; serve the
+        # last known good list if we have one.
+        logger.error(
+            "Could not read the model registry (%s); %s",
+            e,
+            "serving the last known list" if _last_good else "no cached list to fall back on",
+        )
+        return _last_good if _last_good is not None else []
 
-    _cache = list(models_by_id.values())
+    if not models:
+        logger.warning(
+            "No models are registered. Add one in Settings > Models, or seed "
+            "an existing deployment with: uv run python -m scripts.import_models"
+        )
+
+    _cache = models
     _cache_at = now
+    _last_good = models
     return _cache
 
 
-async def resolve_model(model_id: str) -> Optional[ModelDescriptor]:
-    """Look up a registry entry by id, or None if it is not (or no longer) known."""
+async def resolve_model(model_id: str) -> Optional[ModelConfig]:
+    """Look up an enabled model by registry id, or None if unknown."""
     if not model_id:
         return None
     for desc in await get_all_available_models():
@@ -106,18 +98,22 @@ async def resolve_model(model_id: str) -> Optional[ModelDescriptor]:
     return None
 
 
-def api_key_for(desc: ModelDescriptor) -> Optional[str]:
-    """Resolve the credential for a model.
+async def get_default_model() -> Optional[ModelConfig]:
+    """The model to use when none was explicitly selected.
 
-    Without this, switching a session from e.g. google_genai to an OpenAI
-    model would send the globally configured key to the wrong provider.
+    The first enabled entry in admin-defined order, so an operator controls
+    the default by ordering rather than by a magic id.
     """
-    if desc.api_key_env:
-        key = os.environ.get(desc.api_key_env)
-        if key:
-            return key
-        logger.warning(
-            f"Model {desc.id!r} declares api_key_env={desc.api_key_env!r} "
-            f"but it is unset; falling back to the global API key"
-        )
-    return get_settings().api_key
+    models = await get_all_available_models()
+    return models[0] if models else None
+
+
+async def api_key_for(desc: Optional[ModelConfig]) -> Optional[str]:
+    """Decrypt the credential registered for a model.
+
+    Returns None when the model has no stored credential — correct for local
+    runtimes (LM Studio, Ollama) that need no authentication.
+    """
+    if desc is None:
+        return None
+    return await _repository().get_api_key(desc.id)

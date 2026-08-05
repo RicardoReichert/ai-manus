@@ -538,7 +538,8 @@ class AgentTaskRunnerFactory(TaskRunnerFactory):
                 model=desc.model,
                 provider=desc.provider,
                 base_url=desc.base_url,
-                api_key=api_key_for(desc),
+                api_key=await api_key_for(desc),
+                capabilities=desc.capabilities,
             ), None
         except Exception as e:
             logger.exception(f"Failed to build LLM for model {session.model_name}: {e}")

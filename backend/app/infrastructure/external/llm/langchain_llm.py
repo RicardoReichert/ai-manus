@@ -22,6 +22,7 @@ from langchain_core.prompts import PromptTemplate
 
 from app.core.config import Settings, get_settings
 from app.domain.models.message import LLMMessage, Role, ToolCall
+from app.domain.models.model_capabilities import ModelCapabilities
 from app.infrastructure.external.llm.robust_json_parser import (
     RobustJsonParser,
     ToolCallParseError,
@@ -51,9 +52,11 @@ class LangchainLLM:
         model_provider: Optional[str] = None,
         base_url: Any = _INHERIT_API_BASE,
         api_key: Optional[str] = None,
+        capabilities: Optional[ModelCapabilities] = None,
     ):
         settings = settings or get_settings()
         self._max_retries = max_retries
+        self.capabilities = capabilities or ModelCapabilities()
 
         target_model = model_name or settings.model_name
         target_provider = model_provider or settings.model_provider
@@ -64,7 +67,9 @@ class LangchainLLM:
             model=target_model,
             model_provider=target_provider,
             temperature=settings.temperature,
-            max_tokens=settings.max_tokens,
+            # A small model's own output limit is lower than the global
+            # default; exceeding it is a hard provider error, not a truncation.
+            max_tokens=self.capabilities.max_output_tokens or settings.max_tokens,
         )
         if target_base_url and target_provider != "google_genai":
             kwargs["base_url"] = target_base_url
@@ -219,7 +224,7 @@ class LangchainLLM:
 # parser, so gateways are cached per distinct target rather than per call.
 # The registry bounds the key space in practice; the cap is a safety net.
 _MAX_CACHED_GATEWAYS = 32
-_gateway_cache: "OrderedDict[Tuple[Optional[str], Optional[str], Any], LangchainLLM]" = OrderedDict()
+_gateway_cache: "OrderedDict[Tuple[Optional[str], Optional[str], Any, Optional[str]], LangchainLLM]" = OrderedDict()
 
 
 def get_langchain_llm(
@@ -227,6 +232,7 @@ def get_langchain_llm(
     provider: Optional[str] = None,
     base_url: Any = _INHERIT_API_BASE,
     api_key: Optional[str] = None,
+    capabilities: Optional[ModelCapabilities] = None,
 ) -> LangchainLLM:
     """Return a LangChain LLM gateway for a target, cached per target.
 
@@ -234,7 +240,11 @@ def get_langchain_llm(
     is what the DI container and the Celery worker use. Pass ``base_url=None``
     explicitly to mean "no base_url" rather than "inherit API_BASE".
     """
-    key = (provider, model, base_url)
+    # Capabilities affect construction (max_tokens) and per-call behavior
+    # (guided decoding), so they must be part of the cache key — otherwise an
+    # admin editing a model's capabilities would keep getting the old gateway.
+    caps_key = capabilities.model_dump_json() if capabilities else None
+    key = (provider, model, base_url, caps_key)
     cached = _gateway_cache.get(key)
     if cached is not None:
         _gateway_cache.move_to_end(key)
@@ -249,6 +259,7 @@ def get_langchain_llm(
         model_provider=provider,
         base_url=base_url,
         api_key=api_key,
+        capabilities=capabilities,
     )
     _gateway_cache[key] = gateway
     while len(_gateway_cache) > _MAX_CACHED_GATEWAYS:

@@ -25,7 +25,11 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.application.services.claw_service import ClawService
 from app.domain.models.message import LLMMessage, Role, ToolCall
 from app.infrastructure.external.llm.langchain_llm import get_langchain_llm
-from app.infrastructure.external.llm.model_registry import api_key_for, resolve_model
+from app.infrastructure.external.llm.model_registry import (
+    api_key_for,
+    get_default_model,
+    resolve_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -156,22 +160,49 @@ def _domain_message_to_openai_stream_chunks(message: LLMMessage, model: str) -> 
     ]
 
 
-async def _resolve_llm_target(requested_model: Optional[str]):
-    """Resolve the requested model id against the registry, defaulting to the
-    global model when unset/unrecognized (e.g. Claw's "manus-proxy/default")."""
-    candidate = (requested_model or "").removeprefix("manus-proxy/") or "default"
-    desc = await resolve_model(candidate) or await resolve_model("default")
+async def _resolve_llm_target(requested_model: Optional[str], user_id: Optional[str] = None):
+    """Resolve which registry model this Claw request should run against.
+
+    Claw's openclaw.json hardcodes the alias ``manus-proxy/default`` (baked in
+    at container build time), so the alias cannot carry the user's choice.
+    Resolution order: the model the user picked for their Claw, then the
+    literal requested id if it happens to name a real registry entry, then the
+    first enabled model. This is what lets switching models in the Claw UI take
+    effect without regenerating config or restarting the container.
+    """
+    desc = None
+
+    if user_id:
+        claw_service = await _get_claw_service()
+        claw = await claw_service.claw_repository.get_by_user_id(user_id)
+        if claw and getattr(claw, "claw_model_id", None):
+            desc = await resolve_model(claw.claw_model_id)
+
+    if desc is None:
+        candidate = (requested_model or "").removeprefix("manus-proxy/")
+        if candidate and candidate != "default":
+            desc = await resolve_model(candidate)
+
+    if desc is None:
+        desc = await get_default_model()
+
+    if desc is None:
+        raise RuntimeError(
+            "No models are registered. Add one in Settings > Models."
+        )
+
     return get_langchain_llm(
         model=desc.model,
         provider=desc.provider,
         base_url=desc.base_url,
-        api_key=api_key_for(desc),
+        api_key=await api_key_for(desc),
+        capabilities=desc.capabilities,
     )
 
 
-async def _stream_llm_response(body: dict) -> AsyncIterator[bytes]:
+async def _stream_llm_response(body: dict, user_id: Optional[str] = None) -> AsyncIterator[bytes]:
     try:
-        llm = await _resolve_llm_target(body.get("model"))
+        llm = await _resolve_llm_target(body.get("model"), user_id)
         messages = _openai_messages_to_domain(body.get("messages") or [])
         reply = await llm.ask(
             messages,
@@ -190,8 +221,8 @@ async def _stream_llm_response(body: dict) -> AsyncIterator[bytes]:
         yield sse_error.encode("utf-8")
 
 
-async def _get_llm_response(body: dict) -> dict:
-    llm = await _resolve_llm_target(body.get("model"))
+async def _get_llm_response(body: dict, user_id: Optional[str] = None) -> dict:
+    llm = await _resolve_llm_target(body.get("model"), user_id)
     messages = _openai_messages_to_domain(body.get("messages") or [])
     reply = await llm.ask(
         messages,
@@ -229,7 +260,7 @@ async def chat_completions(request: Request):
     try:
         if is_stream:
             return StreamingResponse(
-                _stream_llm_response(body),
+                _stream_llm_response(body, user_id),
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -237,7 +268,7 @@ async def chat_completions(request: Request):
                 },
             )
         else:
-            result = await _get_llm_response(body)
+            result = await _get_llm_response(body, user_id)
             return JSONResponse(content=result)
 
     except Exception as e:

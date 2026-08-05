@@ -15,6 +15,7 @@ from app.domain.models.event import (
 )
 from app.domain.repositories.agent_repository import AgentRepository
 from app.domain.external.llm import LLM
+from app.domain.models.model_capabilities import ModelCapabilities
 
 
 logger = logging.getLogger(__name__)
@@ -188,8 +189,14 @@ class BaseAgent(ABC):
                     # structured runs, nudge the model to use the output tool.
                     if not output_tool:
                         break
+                    # A model that needs guided decoding tends to answer in
+                    # prose instead of calling the tool, and a plain nudge
+                    # just burns iterations. Forcing a tool call converts an
+                    # eventual max-iterations failure into a usable result.
+                    forced = "required" if self.capabilities.needs_guided_decoding else None
                     message = await self.ask(
-                        f"Submit your result by calling the `{output_tool.name}` tool."
+                        f"Submit your result by calling the `{output_tool.name}` tool.",
+                        tool_choice=forced,
                     )
                     continue
 
@@ -327,30 +334,60 @@ class BaseAgent(ABC):
         self.memory.roll_back()
         await self._repository.save_memory(self._agent_id, self.name, self.memory)
 
-    async def ask_with_messages(self, messages: List[LLMMessage]) -> LLMMessage:
+    @property
+    def capabilities(self) -> "ModelCapabilities":
+        """Capability profile of the model actually backing this agent.
+
+        Read off the LLM gateway rather than passed in, so every construction
+        path (session model, Celery worker, global default) gets the right
+        profile without threading it through each agent constructor.
+        """
+        caps = getattr(self._llm, "capabilities", None)
+        return caps if caps is not None else ModelCapabilities()
+
+    @property
+    def effective_context_tokens(self) -> int:
+        """Compaction budget for this model.
+
+        A 32K local model would otherwise be handed the 100K class default and
+        overflow. Reserve headroom for the reply and the tool schemas rather
+        than compacting exactly at the window edge.
+        """
+        window = self.capabilities.context_window
+        if not window:
+            return self.max_context_tokens
+        return min(self.max_context_tokens, int(window * 0.75))
+
+    async def ask_with_messages(
+        self,
+        messages: List[LLMMessage],
+        tool_choice: Optional[str] = None,
+    ) -> LLMMessage:
         await self._add_to_memory(messages)
 
         # Token-aware guard: reclaim budget from old tool results before the
         # context is sent to the model.
-        if self.memory.estimate_tokens() > self.max_context_tokens:
-            self.memory.compact(max_tokens=self.max_context_tokens)
+        budget = self.effective_context_tokens
+        if self.memory.estimate_tokens() > budget:
+            self.memory.compact(max_tokens=budget)
             await self._repository.save_memory(self._agent_id, self.name, self.memory)
 
         context = list(self.memory.get_messages())
         message = await self._llm.ask(
             messages=context,
             tools=self.get_tool_schemas(),
-            tool_choice=self.tool_choice,
+            tool_choice=tool_choice or self.tool_choice,
         )
         logger.debug(f"Response from model: {message}")
 
         await self._add_to_memory([message])
         return message
 
-    async def ask(self, request: str) -> LLMMessage:
-        return await self.ask_with_messages([
-            LLMMessage.user(request)
-        ])
+    async def ask(self, request: str, tool_choice: Optional[str] = None) -> LLMMessage:
+        return await self.ask_with_messages(
+            [LLMMessage.user(request)],
+            tool_choice=tool_choice,
+        )
     
     async def roll_back(self, message: Message):
         await self._ensure_memory()

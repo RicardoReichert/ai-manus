@@ -5,7 +5,7 @@ from app.domain.models.session import Session, SessionSummary, TaskMode
 from app.domain.repositories.session_repository import SessionRepository
 from app.domain.repositories.file_favorite_repository import FileFavoriteRepository
 from app.application.errors.exceptions import NotFoundError, BadRequestError
-from app.core.config import ModelDescriptor
+from app.domain.models.model_config import ModelConfig
 from app.infrastructure.external.llm.model_registry import resolve_model
 
 from app.interfaces.schemas.session import ShellViewResponse
@@ -86,7 +86,7 @@ class AgentService:
         await self._session_repository.save(session)
         return session
 
-    async def _validate_model(self, model_name: Optional[str]) -> Optional[ModelDescriptor]:
+    async def _validate_model(self, model_name: Optional[str]) -> Optional[ModelConfig]:
         """Resolve a model id against the registry, rejecting unknown ones."""
         if not model_name:
             return None
@@ -258,7 +258,7 @@ class AgentService:
         user_id: str,
         model_name: str,
         model_provider: Optional[str] = None,
-    ) -> ModelDescriptor:
+    ) -> ModelConfig:
         """Update active LLM model name and provider for a session.
 
         Returns the registry entry actually stored, so callers can echo the

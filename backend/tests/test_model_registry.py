@@ -1,178 +1,153 @@
-"""Unit tests for the file-backed model registry.
+"""Unit tests for the database-backed model registry.
 
-No running server needed — these exercise model_registry.py directly, the
-same style as test_llm_gateway.py.
+No running server and no real MongoDB — the repository is stubbed, so these
+exercise the registry's own logic (caching, default selection, credential
+delegation) rather than Beanie.
 """
-import json
-import os
+from typing import List, Optional
 
 import pytest
 
-from app.core.config import get_settings
+from app.domain.models.model_capabilities import ModelCapabilities
+from app.domain.models.model_config import ModelConfig
 from app.infrastructure.external.llm import model_registry as registry
 
 
-@pytest.fixture(autouse=True)
-def _reset_registry_state(monkeypatch, tmp_path):
-    """Isolate each test: fresh cache, fresh models_config_path, no env leakage."""
-    registry.invalidate_registry_cache()
-    monkeypatch.setattr(get_settings(), "models_config_path", str(tmp_path / "models.json"))
-    yield
-    registry.invalidate_registry_cache()
+class FakeRepository:
+    """Minimal stand-in for ModelConfigRepository."""
+
+    def __init__(self, models: Optional[List[ModelConfig]] = None):
+        self.models = models or []
+        self.api_keys = {}
+        self.list_calls = 0
+        self.fail_with: Optional[Exception] = None
+
+    async def list_all(self, enabled_only: bool = False) -> List[ModelConfig]:
+        self.list_calls += 1
+        if self.fail_with:
+            raise self.fail_with
+        if enabled_only:
+            return [m for m in self.models if m.enabled]
+        return list(self.models)
+
+    async def get_api_key(self, model_config_id: str) -> Optional[str]:
+        return self.api_keys.get(model_config_id)
 
 
-def _write_registry(tmp_path, models: list[dict]) -> None:
-    path = tmp_path / "models.json"
-    path.write_text(json.dumps({"models": models}))
+def make_model(model_id: str, **overrides) -> ModelConfig:
+    defaults = dict(id=model_id, name=model_id, provider="openai", model=f"{model_id}-real")
+    defaults.update(overrides)
+    return ModelConfig(**defaults)
 
 
-class TestFileLoading:
-    @pytest.mark.asyncio
-    async def test_missing_file_yields_default_only(self):
-        models = await registry.get_all_available_models()
-        assert [m.id for m in models] == ["default"]
-        assert models[0].name == get_settings().model_name
-
-    @pytest.mark.asyncio
-    async def test_malformed_json_is_ignored_not_raised(self, tmp_path):
-        (tmp_path / "models.json").write_text("{not valid json")
-        models = await registry.get_all_available_models()
-        assert [m.id for m in models] == ["default"]
-
-    @pytest.mark.asyncio
-    async def test_invalid_entry_is_skipped_not_raised(self, tmp_path):
-        _write_registry(tmp_path, [{"id": "bad"}])  # missing required fields
-        models = await registry.get_all_available_models()
-        assert [m.id for m in models] == ["default"]
-
-    @pytest.mark.asyncio
-    async def test_valid_file_merges_and_default_stays_first(self, tmp_path):
-        _write_registry(
-            tmp_path,
-            [
-                {"id": "gemini", "name": "Gemini", "provider": "google_genai", "model": "gemini-2.5-flash"},
-            ],
-        )
-        models = await registry.get_all_available_models()
-        assert [m.id for m in models] == ["default", "gemini"]
-
-    @pytest.mark.asyncio
-    async def test_file_entry_can_override_default(self, tmp_path):
-        _write_registry(
-            tmp_path,
-            [{"id": "default", "name": "Custom Default", "provider": "openai", "model": "gpt-4o-mini"}],
-        )
-        models = await registry.get_all_available_models()
-        assert len(models) == 1
-        assert models[0].name == "Custom Default"
+@pytest.fixture
+def repo(monkeypatch):
+    """Point the registry at a stub repository and start with a cold cache."""
+    fake = FakeRepository()
+    monkeypatch.setattr(registry, "_repository", lambda: fake)
+    registry.invalidate_registry_cache(drop_last_good=True)
+    yield fake
+    registry.invalidate_registry_cache(drop_last_good=True)
 
 
-class TestResolveModel:
-    @pytest.mark.asyncio
-    async def test_resolve_known_id(self):
-        desc = await registry.resolve_model("default")
-        assert desc is not None and desc.id == "default"
+class TestListing:
+    async def test_empty_database_yields_no_models(self, repo):
+        """A fresh install has nothing until an admin registers or imports."""
+        assert await registry.get_all_available_models() == []
 
-    @pytest.mark.asyncio
-    async def test_resolve_unknown_id_returns_none(self):
-        assert await registry.resolve_model("does-not-exist") is None
+    async def test_returns_registered_models(self, repo):
+        repo.models = [make_model("a"), make_model("b")]
+        assert [m.id for m in await registry.get_all_available_models()] == ["a", "b"]
 
-    @pytest.mark.asyncio
-    async def test_resolve_empty_id_returns_none(self):
+    async def test_disabled_models_are_excluded(self, repo):
+        repo.models = [make_model("a"), make_model("b", enabled=False)]
+        assert [m.id for m in await registry.get_all_available_models()] == ["a"]
+
+
+class TestResolve:
+    async def test_resolves_a_known_id(self, repo):
+        repo.models = [make_model("a"), make_model("b")]
+        assert (await registry.resolve_model("b")).model == "b-real"
+
+    async def test_unknown_id_returns_none(self, repo):
+        repo.models = [make_model("a")]
+        assert await registry.resolve_model("nope") is None
+
+    async def test_blank_id_returns_none(self, repo):
+        repo.models = [make_model("a")]
         assert await registry.resolve_model("") is None
 
-    @pytest.mark.asyncio
-    async def test_discovered_id_maps_to_real_wire_model_name(self, tmp_path):
-        # Registry entries may use an opaque id distinct from the provider's
-        # own model name — resolve_model must expose both.
-        _write_registry(
-            tmp_path,
-            [{
-                "id": "lmstudio:qwen-local",
-                "name": "Qwen (local)",
-                "provider": "openai",
-                "model": "qwen-local",
-                "base_url": "http://host.docker.internal:1234/v1",
-                "is_local": True,
-            }],
-        )
-        desc = await registry.resolve_model("lmstudio:qwen-local")
-        assert desc is not None
-        assert desc.id == "lmstudio:qwen-local"
-        assert desc.model == "qwen-local"
+    async def test_a_disabled_model_cannot_be_resolved(self, repo):
+        repo.models = [make_model("a", enabled=False)]
+        assert await registry.resolve_model("a") is None
 
 
-class TestApiKeyFor:
-    @pytest.mark.asyncio
-    async def test_prefers_api_key_env_over_global_key(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("MY_MODEL_KEY", "specific-key")
-        _write_registry(
-            tmp_path,
-            [{
-                "id": "custom",
-                "name": "Custom",
-                "provider": "openai",
-                "model": "gpt-4o",
-                "api_key_env": "MY_MODEL_KEY",
-            }],
-        )
-        desc = await registry.resolve_model("custom")
-        assert registry.api_key_for(desc) == "specific-key"
+class TestDefaultModel:
+    async def test_default_is_the_first_enabled_model(self, repo):
+        """Ordering is the admin's lever — no magic 'default' id anymore."""
+        repo.models = [make_model("first"), make_model("second")]
+        assert (await registry.get_default_model()).id == "first"
 
-    @pytest.mark.asyncio
-    async def test_falls_back_to_global_key_when_env_unset(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("UNSET_MODEL_KEY", raising=False)
-        _write_registry(
-            tmp_path,
-            [{
-                "id": "custom",
-                "name": "Custom",
-                "provider": "openai",
-                "model": "gpt-4o",
-                "api_key_env": "UNSET_MODEL_KEY",
-            }],
-        )
-        desc = await registry.resolve_model("custom")
-        assert registry.api_key_for(desc) == get_settings().api_key
-
-    def test_falls_back_to_global_key_when_no_api_key_env(self):
-        desc = registry._default_model()
-        assert registry.api_key_for(desc) == get_settings().api_key
+    async def test_default_is_none_when_nothing_registered(self, repo):
+        assert await registry.get_default_model() is None
 
 
 class TestCache:
-    @pytest.mark.asyncio
-    async def test_reads_file_once_within_ttl(self, tmp_path, monkeypatch):
-        _write_registry(tmp_path, [])
-        calls = {"n": 0}
-        real_load = registry._load_file_models
-
-        def counting_load():
-            calls["n"] += 1
-            return real_load()
-
-        monkeypatch.setattr(registry, "_load_file_models", counting_load)
-
+    async def test_reads_once_within_the_ttl(self, repo):
+        repo.models = [make_model("a")]
         await registry.get_all_available_models()
         await registry.get_all_available_models()
-        await registry.get_all_available_models()
+        assert repo.list_calls == 1
 
-        assert calls["n"] == 1
-
-    @pytest.mark.asyncio
-    async def test_invalidate_forces_reload(self, tmp_path, monkeypatch):
-        _write_registry(tmp_path, [])
-        calls = {"n": 0}
-        real_load = registry._load_file_models
-
-        def counting_load():
-            calls["n"] += 1
-            return real_load()
-
-        monkeypatch.setattr(registry, "_load_file_models", counting_load)
-
+    async def test_invalidate_forces_a_reload(self, repo):
+        repo.models = [make_model("a")]
         await registry.get_all_available_models()
         registry.invalidate_registry_cache()
         await registry.get_all_available_models()
+        assert repo.list_calls == 2
 
-        assert calls["n"] == 2
+    async def test_admin_edits_are_visible_after_invalidation(self, repo):
+        repo.models = [make_model("a")]
+        await registry.get_all_available_models()
+        repo.models.append(make_model("b"))
+        registry.invalidate_registry_cache()
+        assert [m.id for m in await registry.get_all_available_models()] == ["a", "b"]
+
+
+class TestFailureHandling:
+    async def test_a_database_error_does_not_raise(self, repo):
+        """Chat must not hard-fail because the registry read blipped."""
+        repo.fail_with = RuntimeError("mongo down")
+        assert await registry.get_all_available_models() == []
+
+    async def test_serves_the_last_known_list_when_the_database_fails(self, repo):
+        repo.models = [make_model("a")]
+        await registry.get_all_available_models()
+        registry.invalidate_registry_cache()
+        repo.fail_with = RuntimeError("mongo down")
+        assert [m.id for m in await registry.get_all_available_models()] == ["a"]
+
+
+class TestApiKey:
+    async def test_returns_the_decrypted_credential(self, repo):
+        model = make_model("a")
+        repo.models = [model]
+        repo.api_keys["a"] = "sk-secret"
+        assert await registry.api_key_for(model) == "sk-secret"
+
+    async def test_none_when_the_model_has_no_credential(self, repo):
+        """Correct for local runtimes (LM Studio / Ollama) needing no auth."""
+        model = make_model("a")
+        repo.models = [model]
+        assert await registry.api_key_for(model) is None
+
+    async def test_none_model_is_tolerated(self, repo):
+        assert await registry.api_key_for(None) is None
+
+
+class TestCapabilitiesSurvive:
+    async def test_capabilities_reach_the_caller(self, repo):
+        """The gateway needs these to adapt; they must not be dropped."""
+        repo.models = [make_model("small", capabilities=ModelCapabilities(max_tools=8))]
+        resolved = await registry.resolve_model("small")
+        assert resolved.capabilities.max_tools == 8
