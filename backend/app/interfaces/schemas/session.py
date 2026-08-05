@@ -31,6 +31,7 @@ class GetSessionResponse(BaseModel):
     is_shared: bool = False
     is_favorite: bool = False
     is_pinned: bool = False
+    is_archived: bool = False
     project_id: Optional[str] = None
     task_mode: TaskMode = TaskMode.AGENT
     model_name: Optional[str] = None
@@ -48,6 +49,7 @@ class ListSessionItem(BaseModel):
     is_shared: bool = False
     is_favorite: bool = False
     is_pinned: bool = False
+    is_archived: bool = False
     project_id: Optional[str] = None
     task_mode: TaskMode = TaskMode.AGENT
     model_name: Optional[str] = None
@@ -65,6 +67,7 @@ class ListSessionItem(BaseModel):
             is_shared=summary.is_shared,
             is_favorite=summary.is_favorite,
             is_pinned=summary.is_pinned,
+            is_archived=summary.is_archived,
             project_id=summary.project_id,
             task_mode=summary.task_mode or TaskMode.AGENT,
             model_name=summary.model_name,
@@ -117,6 +120,12 @@ class PinSessionResponse(BaseModel):
     """Pin session response schema"""
     session_id: str
     is_pinned: bool
+
+
+class ArchiveSessionResponse(BaseModel):
+    """Archive session response schema"""
+    session_id: str
+    is_archived: bool
 
 
 class FavoriteLibraryFileResponse(BaseModel):

@@ -24,6 +24,7 @@ SESSION_LIST_PROJECTION = {
     "is_shared": 1,
     "is_favorite": 1,
     "is_pinned": 1,
+    "is_archived": 1,
     "project_id": 1,
     "task_mode": 1,
     "model_name": 1,
@@ -69,6 +70,7 @@ class MongoSessionRepository(SessionRepository):
             is_shared=doc.get("is_shared", False),
             is_favorite=doc.get("is_favorite", False),
             is_pinned=doc.get("is_pinned", False),
+            is_archived=doc.get("is_archived", False),
             project_id=doc.get("project_id"),
             task_mode=doc.get("task_mode") or TaskMode.AGENT,
             model_name=doc.get("model_name"),
@@ -89,11 +91,28 @@ class MongoSessionRepository(SessionRepository):
         ).sort("-latest_message_at").to_list()
         return [mongo_session.to_domain() for mongo_session in mongo_sessions]
 
-    async def find_summaries_by_user_id(self, user_id: str) -> List[SessionSummary]:
+    async def find_summaries_by_user_id(
+        self,
+        user_id: str,
+        archived: Optional[bool] = False,
+        shared: Optional[bool] = None,
+    ) -> List[SessionSummary]:
         """Find lightweight session summaries for a user (excludes events/files)"""
+        query: dict = {"user_id": user_id}
+        # $ne True (not == False) so pre-migration docs without is_archived
+        # set still count as "not archived".
+        if archived is True:
+            query["is_archived"] = True
+        elif archived is False:
+            query["is_archived"] = {"$ne": True}
+        if shared is True:
+            query["is_shared"] = True
+        elif shared is False:
+            query["is_shared"] = {"$ne": True}
+
         collection = SessionDocument.get_pymongo_collection()
         cursor = collection.find(
-            {"user_id": user_id},
+            query,
             SESSION_LIST_PROJECTION,
         ).sort("latest_message_at", -1)
         summaries = []
@@ -275,6 +294,17 @@ class MongoSessionRepository(SessionRepository):
             SessionDocument.session_id == session_id
         ).update(
             {"$set": {"is_pinned": is_pinned, "updated_at": datetime.now(UTC)}}
+        )
+        if not result:
+            raise ValueError(f"Session {session_id} not found")
+        await self._notify_upsert(session_id)
+
+    async def update_archived_status(self, session_id: str, is_archived: bool) -> None:
+        """Update the archived status of a session"""
+        result = await SessionDocument.find_one(
+            SessionDocument.session_id == session_id
+        ).update(
+            {"$set": {"is_archived": is_archived, "updated_at": datetime.now(UTC)}}
         )
         if not result:
             raise ValueError(f"Session {session_id} not found")

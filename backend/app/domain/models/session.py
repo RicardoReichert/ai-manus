@@ -34,6 +34,7 @@ class SessionSummary(BaseModel):
     is_shared: bool = False
     is_favorite: bool = False
     is_pinned: bool = False
+    is_archived: bool = False
     project_id: Optional[str] = None
     task_mode: TaskMode = TaskMode.AGENT
     model_name: Optional[str] = None
@@ -59,6 +60,7 @@ class Session(BaseModel):
     is_shared: bool = False  # Whether this session is shared publicly
     is_favorite: bool = False
     is_pinned: bool = False
+    is_archived: bool = False
     project_id: Optional[str] = None
     task_mode: TaskMode = TaskMode.AGENT
     model_name: Optional[str] = None

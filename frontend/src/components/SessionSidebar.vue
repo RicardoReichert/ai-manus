@@ -198,7 +198,8 @@
                       @shared="handleSessionShared"
                       @favorited="handleSessionFavorited"
                       @pinned="handleSessionPinned"
-                      @moved="handleSessionMoved" />
+                      @moved="handleSessionMoved"
+                      @archived="handleSessionArchived" />
                     <div
                       v-if="sessionsForProject(project.project_id).length === 0"
                       class="flex items-center ps-[36px] pe-[8px] h-[36px]">
@@ -310,7 +311,8 @@
                       @shared="handleSessionShared"
                       @favorited="handleSessionFavorited"
                       @pinned="handleSessionPinned"
-                      @moved="handleSessionMoved" />
+                      @moved="handleSessionMoved"
+                      @archived="handleSessionArchived" />
                     <div
                       v-if="sessionsForProject(project.project_id).length === 0"
                       class="flex items-center ps-[36px] pe-[8px] h-[36px]">
@@ -372,7 +374,8 @@
                   @shared="handleSessionShared"
                   @favorited="handleSessionFavorited"
                   @pinned="handleSessionPinned"
-                  @moved="handleSessionMoved" />
+                  @moved="handleSessionMoved"
+                  @archived="handleSessionArchived" />
               </div>
               <div v-else class="flex flex-col items-center justify-center gap-4 py-8">
                 <div class="flex flex-col items-center gap-2 text-[var(--text-tertiary)]">
@@ -472,6 +475,14 @@ const cancelSessionsListWS = ref<(() => void) | null>(null)
 
 const upsertSessionItem = (item: ListSessionItem) => {
   const rest = sessions.value.filter(s => s.session_id !== item.session_id)
+  // The upsert push (unlike the initial snapshot / GET /sessions) isn't
+  // filtered server-side — an item that got archived elsewhere (another
+  // tab, the ChatPage "..." menu) would otherwise reappear here the moment
+  // its WS upsert arrives. Drop it instead, same as an explicit removal.
+  if (item.is_archived) {
+    sessions.value = rest
+    return
+  }
   const next = [...rest, item]
   next.sort((a, b) => (b.latest_message_at ?? 0) - (a.latest_message_at ?? 0))
   sessions.value = next
@@ -794,6 +805,11 @@ const handleSessionMoved = (sessionId: string, projectId: string | null) => {
   if (projectId) {
     expandedProjectIds.value = new Set([...expandedProjectIds.value, projectId])
   }
+}
+
+const handleSessionArchived = (sessionId: string, _isArchived: boolean) => {
+  // Default sidebar view excludes archived sessions — same removal as delete.
+  sessions.value = sessions.value.filter(session => session.session_id !== sessionId)
 }
 
 const handleKeydown = (event: KeyboardEvent) => {

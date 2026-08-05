@@ -121,6 +121,7 @@ class SessionDocument(BaseDocument[Session], id_field="session_id", domain_model
     is_shared: Optional[bool] = False
     is_favorite: Optional[bool] = False
     is_pinned: Optional[bool] = False
+    is_archived: Optional[bool] = False
     project_id: Optional[str] = None
     task_mode: Optional[TaskMode] = TaskMode.AGENT
     model_name: Optional[str] = None
@@ -142,6 +143,10 @@ class SessionDocument(BaseDocument[Session], id_field="session_id", domain_model
             IndexModel(
                 [("user_id", ASCENDING), ("is_pinned", DESCENDING), ("latest_message_at", DESCENDING)],
                 name="user_id_is_pinned_latest",
+            ),
+            IndexModel(
+                [("user_id", ASCENDING), ("is_archived", ASCENDING), ("latest_message_at", DESCENDING)],
+                name="user_id_is_archived_latest",
             ),
         ]
 

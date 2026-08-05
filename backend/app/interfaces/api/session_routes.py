@@ -12,7 +12,7 @@ from app.interfaces.schemas.session import (
     ListSessionItem, ListSessionResponse, ShellViewResponse,
     ShareSessionResponse, SharedSessionResponse,
     UpdateSessionTitleRequest, UpdateSessionTitleResponse,
-    FavoriteSessionResponse, PinSessionRequest, PinSessionResponse,
+    FavoriteSessionResponse, PinSessionRequest, PinSessionResponse, ArchiveSessionResponse,
     MoveSessionProjectRequest, MoveSessionProjectResponse,
     UpdateSessionTaskModeRequest, UpdateSessionTaskModeResponse,
     UpdateSessionModelRequest, UpdateSessionModelResponse,
@@ -65,6 +65,7 @@ async def get_session(
         is_shared=session.is_shared,
         is_favorite=session.is_favorite,
         is_pinned=session.is_pinned,
+        is_archived=session.is_archived,
         project_id=session.project_id,
         task_mode=session.task_mode,
         model_name=session.model_name,
@@ -120,6 +121,24 @@ async def pin_session(
 ) -> APIResponse[PinSessionResponse]:
     await agent_service.update_session_pin(session_id, current_user.id, request.is_pinned)
     return APIResponse.success(PinSessionResponse(session_id=session_id, is_pinned=request.is_pinned))
+
+@router.post("/{session_id}/archive", response_model=APIResponse[ArchiveSessionResponse])
+async def archive_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    agent_service: AgentService = Depends(get_agent_service)
+) -> APIResponse[ArchiveSessionResponse]:
+    await agent_service.update_session_archived(session_id, current_user.id, True)
+    return APIResponse.success(ArchiveSessionResponse(session_id=session_id, is_archived=True))
+
+@router.delete("/{session_id}/archive", response_model=APIResponse[ArchiveSessionResponse])
+async def unarchive_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    agent_service: AgentService = Depends(get_agent_service)
+) -> APIResponse[ArchiveSessionResponse]:
+    await agent_service.update_session_archived(session_id, current_user.id, False)
+    return APIResponse.success(ArchiveSessionResponse(session_id=session_id, is_archived=False))
 
 @router.patch("/{session_id}/project", response_model=APIResponse[MoveSessionProjectResponse])
 async def move_session_project(
@@ -189,10 +208,23 @@ async def clear_unread_message_count(
 
 @router.get("", response_model=APIResponse[ListSessionResponse])
 async def get_all_sessions(
+    archived: Optional[bool] = None,
+    shared: Optional[bool] = None,
     current_user: User = Depends(get_current_user),
     agent_service: AgentService = Depends(get_agent_service)
 ) -> APIResponse[ListSessionResponse]:
-    summaries = await agent_service.get_all_sessions(current_user.id)
+    """List the current user's sessions.
+
+    No query params: excludes archived sessions (default sidebar view).
+    ?archived=true: only archived sessions (Data Controls "Arquivadas").
+    ?shared=true: only shared sessions, still excluding archived unless
+      ?archived=true is also passed (Data Controls "Compartilhados").
+    """
+    summaries = await agent_service.get_all_sessions(
+        current_user.id,
+        archived=archived if archived is not None else False,
+        shared=shared,
+    )
     session_items = [ListSessionItem.from_domain(s) for s in summaries]
     return APIResponse.success(ListSessionResponse(sessions=session_items))
 

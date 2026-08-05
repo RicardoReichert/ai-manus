@@ -140,10 +140,21 @@ class AgentService:
             logger.error(f"Session {session_id} not found for user {user_id}")
         return session
     
-    async def get_all_sessions(self, user_id: str) -> List[SessionSummary]:
-        """Get all sessions for a specific user (lightweight summaries)"""
-        logger.info(f"Getting all sessions for user {user_id}")
-        return await self._session_repository.find_summaries_by_user_id(user_id)
+    async def get_all_sessions(
+        self,
+        user_id: str,
+        archived: Optional[bool] = False,
+        shared: Optional[bool] = None,
+    ) -> List[SessionSummary]:
+        """Get all sessions for a specific user (lightweight summaries)
+
+        Excludes archived sessions by default; pass archived=True for the
+        Data Controls "archived" view, shared=True for the "shared" view.
+        """
+        logger.info(f"Getting all sessions for user {user_id} (archived={archived}, shared={shared})")
+        return await self._session_repository.find_summaries_by_user_id(
+            user_id, archived=archived, shared=shared
+        )
 
     async def get_session_summary(
         self, session_id: str, user_id: str
@@ -188,6 +199,13 @@ class AgentService:
         if not session:
             raise RuntimeError("Session not found")
         await self._session_repository.update_pin_status(session_id, is_pinned)
+
+    async def update_session_archived(self, session_id: str, user_id: str, is_archived: bool) -> None:
+        """Update archived status of a session, ensuring it belongs to the user"""
+        session = await self._session_repository.find_by_id_and_user_id(session_id, user_id)
+        if not session:
+            raise RuntimeError("Session not found")
+        await self._session_repository.update_archived_status(session_id, is_archived)
 
     async def update_session_project(
         self,

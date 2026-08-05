@@ -164,6 +164,20 @@ export async function pinSession(sessionId: string, isPinned: boolean): Promise<
   return response.data.data;
 }
 
+export async function archiveSession(sessionId: string): Promise<{ session_id: string; is_archived: boolean }> {
+  const response = await apiClient.post<ApiResponse<{ session_id: string; is_archived: boolean }>>(
+    `/sessions/${sessionId}/archive`
+  );
+  return response.data.data;
+}
+
+export async function unarchiveSession(sessionId: string): Promise<{ session_id: string; is_archived: boolean }> {
+  const response = await apiClient.delete<ApiResponse<{ session_id: string; is_archived: boolean }>>(
+    `/sessions/${sessionId}/archive`
+  );
+  return response.data.data;
+}
+
 export async function moveSessionProject(
   sessionId: string,
   projectId: string | null
