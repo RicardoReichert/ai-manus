@@ -552,4 +552,8 @@ export default {
   'Test failed': 'Falha no teste',
   'Connected ({ms} ms)': 'Conectado ({ms} ms)',
   'e.g. GPT-4o': 'ex.: GPT-4o',
+  // Model registry admin follow-ups (refresh, description field)
+  'Description': 'Descrição',
+  'Shown under the model name in the dropdown. Leave empty to show nothing.': 'Exibida abaixo do nome do modelo no seletor. Deixe em branco para não exibir nada.',
+  'Optional': 'Opcional',
 }

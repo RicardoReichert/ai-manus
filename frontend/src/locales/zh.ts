@@ -551,4 +551,8 @@ export default {
   'Test failed': '测试失败',
   'Connected ({ms} ms)': '已连接（{ms} 毫秒）',
   'e.g. GPT-4o': '例如 GPT-4o',
+  // Model registry admin follow-ups (refresh, description field)
+  'Description': '描述',
+  'Shown under the model name in the dropdown. Leave empty to show nothing.': '显示在下拉菜单中模型名称下方。留空则不显示任何内容。',
+  'Optional': '可选',
 }

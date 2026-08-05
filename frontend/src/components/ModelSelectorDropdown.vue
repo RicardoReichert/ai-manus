@@ -109,9 +109,20 @@ const {
   ensureModelsLoaded,
 } = useActiveModel()
 
-const selectedModelId = computed(() => (isControlled ? props.modelId : sharedSelectedModelId.value))
-const activeModel = computed<ModelDescriptor | undefined>(() =>
-  isControlled ? availableModels.value.find((m) => m.id === props.modelId) : undefined,
+const activeModel = computed<ModelDescriptor | undefined>(() => {
+  if (!isControlled) return undefined
+  // modelId === null means "use the registry default" (e.g. Claw with no
+  // explicit choice yet) — there is no model whose id is null, so falling
+  // through to availableModels[0] (same convention as the shared/uncontrolled
+  // path) resolves it to a real name instead of leaving the label stuck on
+  // "Loading..." forever once the list has actually loaded.
+  if (props.modelId === null) return availableModels.value[0]
+  return availableModels.value.find((m) => m.id === props.modelId)
+})
+// Resolved id, not the raw prop: a controlled null must highlight/check the
+// actual default entry in the menu below, not match nothing.
+const selectedModelId = computed(() =>
+  isControlled ? (activeModel.value?.id ?? null) : sharedSelectedModelId.value,
 )
 const activeModelName = computed(() => (isControlled ? activeModel.value?.name : sharedActiveModelName.value))
 const isLocalModel = computed(() => (isControlled ? (activeModel.value?.is_local ?? false) : sharedIsLocalModel.value))

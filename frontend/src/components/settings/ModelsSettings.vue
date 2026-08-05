@@ -123,6 +123,10 @@
           <input v-model="form.api_key" type="password" class="settings-input" :placeholder="apiKeyPlaceholder" />
         </FormField>
 
+        <FormField :label="t('Description')" :hint="t('Shown under the model name in the dropdown. Leave empty to show nothing.')">
+          <input v-model="form.description" class="settings-input" :placeholder="t('Optional')" />
+        </FormField>
+
         <FormField :label="t('Tool profile')" :hint="t('Lean gives the model shell/file/message/search plus delegated browsing — best for small (~4B) models.')">
           <div class="flex gap-1.5">
             <button
@@ -181,9 +185,11 @@ import {
   type TestConnectionResult,
 } from '@/api/modelConfig'
 import { useDialog } from '@/composables/useDialog'
+import { useActiveModel } from '@/composables/useActiveModel'
 import { showSuccessToast, showErrorToast } from '@/utils/toast'
 
 const { t } = useI18n()
+const { refreshModels } = useActiveModel()
 const { showConfirmDialog } = useDialog()
 
 // Small inline field wrapper — kept local since it's only used in this form.
@@ -217,6 +223,7 @@ const form = reactive({
   is_local: false,
   provider: 'openai',
   tool_profile: 'full' as ToolProfile,
+  description: '',
 })
 
 const currentPreset = computed(() => MODEL_PROVIDER_PRESETS.find((p) => p.id === selectedPresetId.value))
@@ -255,6 +262,7 @@ function resetForm() {
   form.is_local = false
   form.provider = 'openai'
   form.tool_profile = 'full'
+  form.description = ''
   formError.value = ''
   selectedPresetId.value = 'openai'
 }
@@ -300,6 +308,7 @@ function openEditForm(m: ModelConfigEntry) {
   form.is_local = m.is_local
   form.provider = m.provider
   form.tool_profile = m.tool_profile
+  form.description = m.description ?? ''
   formError.value = ''
   formOpen.value = true
 }
@@ -323,6 +332,7 @@ async function handleSave() {
         is_local: form.is_local,
         provider: form.provider,
         tool_profile: form.tool_profile,
+        description: form.description || null,
       })
       showSuccessToast(t('Model updated'))
     } else {
@@ -336,12 +346,17 @@ async function handleSave() {
         is_local: form.is_local,
         enabled: form.enabled,
         tool_profile: form.tool_profile,
+        description: form.description || null,
       })
       showSuccessToast(t('Model added'))
     }
     formOpen.value = false
     encryptionWarning.value = false
     await loadModels()
+    // Every other part of the app (chat dropdown, Manus Claw dropdown) reads
+    // from useActiveModel's cached list — without this, an admin's change
+    // here is invisible everywhere else until a full page reload.
+    await refreshModels()
   } catch (err: any) {
     const msg = err?.response?.data?.msg || err?.message || t('Failed to save model')
     formError.value = msg
@@ -365,6 +380,7 @@ async function handleDelete(m: ModelConfigEntry) {
         await deleteModelConfig(m.id)
         showSuccessToast(t('Model deleted'))
         await loadModels()
+        await refreshModels()
       } catch (err: any) {
         showErrorToast(err?.response?.data?.msg || err?.message || t('Failed to delete model'))
       }

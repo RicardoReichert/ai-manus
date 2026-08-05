@@ -106,7 +106,7 @@ const { currentUser } = useAuth();
 const showGithubButton = ref(false);
 const githubRepositoryUrl = ref('https://github.com/simpleyyt/ai-manus');
 const chatBoxRef = ref<InstanceType<typeof ChatBox> | null>(null);
-const { selectedModelId, ensureModelsLoaded, setSelectedModel } = useActiveModel();
+const { selectedModelId, ensureModelsLoaded, refreshModels, setSelectedModel } = useActiveModel();
 const taskMode = ref<'agent' | 'chat'>('agent');
 
 const serifFontFamily = 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif';
@@ -172,6 +172,12 @@ const handleSubmit = async () => {
     isSubmitting.value = true;
 
     try {
+      // Reconcile against the live registry first: a model deleted or
+      // disabled by an admin since this id was cached would otherwise 400
+      // ("Unknown model") here — silently, from the user's side, since they
+      // never touched the dropdown. refreshModels() falls back to the
+      // current default when the cached id no longer resolves.
+      await refreshModels();
       const session = await createSession(undefined, taskMode.value, selectedModelId.value || undefined);
       const sessionId = session.session_id;
 

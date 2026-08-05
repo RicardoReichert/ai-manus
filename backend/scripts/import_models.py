@@ -130,7 +130,10 @@ def _global_model_config(sort_order: int) -> Optional[Tuple[ModelConfig, Optiona
         model=settings.model_name,
         base_url=settings.api_base,
         is_local=False,
-        description="Imported from MODEL_NAME / MODEL_PROVIDER",
+        # None, not a migration note: this shows to end users under the
+        # model name in the dropdown, and is editable from Settings > Models
+        # afterward if an admin wants one.
+        description=None,
         enabled=True,
         sort_order=sort_order,
         capabilities=capabilities,
