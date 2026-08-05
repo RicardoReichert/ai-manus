@@ -14,6 +14,7 @@ from app.domain.models.agent import Agent
 from app.domain.services.agent_domain_service import AgentDomainService
 from app.domain.models.event import AgentEvent
 from app.domain.services.session_usage import compute_session_usage
+from app.domain.services.search_messages import search_messages
 from typing import Type
 from app.domain.models.agent import Agent
 from app.domain.external.sandbox import Sandbox
@@ -328,6 +329,11 @@ class AgentService:
                 if len(items) >= limit:
                     return items
         return items
+
+    async def search_messages(self, user_id: str, query: str, limit: int = 30) -> List[dict]:
+        """Global search (TAREFA 16.1) across every message the user's sessions contain"""
+        sessions = await self._session_repository.find_by_user_id(user_id)
+        return search_messages(sessions, query, limit=limit)
 
     async def stop_session(self, session_id: str, user_id: str) -> None:
         """Stop a session, ensuring it belongs to the user"""
