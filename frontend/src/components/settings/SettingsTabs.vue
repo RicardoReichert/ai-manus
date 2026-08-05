@@ -11,6 +11,7 @@ import {
   ChevronsUpDown,
   ArrowUpRight,
   BrainCog,
+  ShieldCheck,
 } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
 import { useSettingsDialog } from '@/composables/useSettingsDialog'
@@ -20,6 +21,7 @@ export type SettingsTabId =
   | 'account'
   | 'shortcuts'
   | 'personalization'
+  | 'data-controls'
   | 'models'
   | 'help'
 
@@ -68,6 +70,7 @@ const navGroups = computed<SettingsNavGroup[]>(() => {
       label: 'Features',
       items: [
         { id: 'personalization', label: 'Personalization', icon: LayoutGrid },
+        { id: 'data-controls', label: 'Data Controls', icon: ShieldCheck },
       ],
     },
   ]

@@ -32,18 +32,6 @@ export const router = createRouter({
       ]
     },
     {
-      path: '/data-controls',
-      component: () => import('../pages/MainLayout.vue'),
-      meta: { requiresAuth: true },
-      children: [
-        {
-          path: '',
-          component: () => import('../pages/DataControlsPage.vue'),
-          meta: { requiresAuth: true }
-        }
-      ]
-    },
-    {
       path: '/chat',
       component: () => import('../pages/MainLayout.vue'),
       meta: { requiresAuth: true },

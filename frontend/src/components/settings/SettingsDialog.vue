@@ -19,6 +19,9 @@
         <template #personalization>
           <PersonalizationSettings />
         </template>
+        <template #data-controls>
+          <DataControlsSettings />
+        </template>
         <template #models>
           <ModelsSettings />
         </template>
@@ -44,6 +47,7 @@ import GeneralSettings from './GeneralSettings.vue'
 import AccountSettings from './AccountSettings.vue'
 import ShortcutsSettings from './ShortcutsSettings.vue'
 import PersonalizationSettings from './PersonalizationSettings.vue'
+import DataControlsSettings from './DataControlsSettings.vue'
 import ModelsSettings from './ModelsSettings.vue'
 import HelpSettings from './HelpSettings.vue'
 
