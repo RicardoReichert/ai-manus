@@ -230,7 +230,9 @@
 import {
   Check, ChevronDown, CircleEllipsis, FileText, Image as ImageIcon,
   LayoutGrid, List, ListFilterPlus, Search, Star,
+  Presentation, Globe, Table, Video,
 } from 'lucide-vue-next'
+import { classifyLibraryFile } from '../utils/libraryFileType'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -244,7 +246,7 @@ import { formatCustomTime } from '../utils/time'
 import { showErrorToast, showSuccessToast } from '../utils/toast'
 
 type ViewMode = 'grid' | 'list'
-type DocType = 'all' | 'documents' | 'media' | 'others'
+type DocType = 'all' | 'slides' | 'sites' | 'documents' | 'spreadsheets' | 'images' | 'audio_video' | 'others'
 
 interface LibraryGroup {
   sessionId: string
@@ -270,8 +272,12 @@ const expandedIds = ref(new Set<string>())
 
 const docTypeOptions = computed(() => [
   { value: 'all' as DocType, label: t('All'), icon: ListFilterPlus },
+  { value: 'slides' as DocType, label: t('Slides'), icon: Presentation },
+  { value: 'sites' as DocType, label: t('Sites'), icon: Globe },
   { value: 'documents' as DocType, label: t('Documents'), icon: FileText },
-  { value: 'media' as DocType, label: t('Images & Videos'), icon: ImageIcon },
+  { value: 'spreadsheets' as DocType, label: t('Spreadsheets'), icon: Table },
+  { value: 'images' as DocType, label: t('Images'), icon: ImageIcon },
+  { value: 'audio_video' as DocType, label: t('Audio & Video'), icon: Video },
   { value: 'others' as DocType, label: t('Others'), icon: CircleEllipsis },
 ])
 
@@ -279,28 +285,8 @@ const docTypeLabel = computed(
   () => docTypeOptions.value.find((o) => o.value === docType.value)?.label || t('All'),
 )
 
-const extOf = (f: LibraryFileItem) => {
-  const name = f.filename || f.file_path || ''
-  const i = name.lastIndexOf('.')
-  return i > 0 ? name.slice(i + 1).toLowerCase() : ''
-}
-
-const isMediaFile = (f: LibraryFileItem) => {
-  const e = extOf(f)
-  const ct = f.content_type || ''
-  return ct.startsWith('image/') || ct.startsWith('video/')
-    || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'mp4', 'mov', 'webm'].includes(e)
-}
-
-const isDocumentFile = (f: LibraryFileItem) =>
-  ['pdf', 'doc', 'docx', 'txt', 'md', 'rtf', 'pages'].includes(extOf(f))
-
-const matchDocType = (f: LibraryFileItem) => {
-  if (docType.value === 'all') return true
-  if (docType.value === 'media') return isMediaFile(f)
-  if (docType.value === 'documents') return isDocumentFile(f)
-  return !isMediaFile(f) && !isDocumentFile(f)
-}
+const matchDocType = (f: LibraryFileItem) =>
+  docType.value === 'all' || classifyLibraryFile(f) === docType.value
 
 const filteredFiles = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
