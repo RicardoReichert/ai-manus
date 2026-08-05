@@ -11,11 +11,21 @@
 
 ---
 
+## Progresso desta iteração
+
+As 15 tarefas classificadas como Nível 1–3 de dificuldade (mais BUG-2) foram implementadas nesta rodada, no branch `feature/paridade-manus-backlog`, uma por commit: **1.1, 1.5, 2.1, 3.1, 4.1, 4.3 (parcial), 5.2, 5.3, 6.1, 12.1 (parcial), 16.1, 17.2 (MVP), 17.3**, mais o hardening do BUG-2. Cada tarefa abaixo tem um bloco **"Implementado"** substituindo ou complementando o **"Escopo residual"** original, com o que de fato mudou de planejado para construído.
+
+**Verificação:** backend `uv run pytest` — 180 testes coletados, 164 passam (os 16 que falham são pré-existentes, confirmados via `git stash`, não relacionados a este trabalho); 65 desses 164 são novos, cobrindo todas as 6 tarefas de backend. Frontend `npm run test && npm run type-check && npm run lint && npm run build` — 20 arquivos/131 testes passando, 0 erros de tipo, 0 erros de lint (30 warnings pré-existentes de `any`), build de produção conclui e gera os chunks das páginas novas (`AgentPage`, `DataControlsPage`).
+
+**Não incluído neste lote** (Nível 4+ da lista de dificuldade, ou dependências explícitas de tarefas fora dele): 1.2, 1.3, 1.4/BUG-1, 2.2, 2.3, 3.2, 3.3, 4.2, 6.2 (já estava pronto), 6.3 (mesmo item do BUG-2), 7.x, 8.x, 9.x, 10.1, 11.1, 13.1, 14.1, 15.x, 17.1, BUG-3 — o restante deste documento os descreve como antes, sem alteração de status além da correção do diagnóstico do BUG-2 (ver Épico 18).
+
+---
+
 ## Épico 1 — Navegação Principal (Sidebar) · `P0`
 
 **Contexto:** A sidebar local tem `Nova Tarefa`, `Biblioteca`, `Manus Claw` (quebrado), `Projetos`, `Tarefas`. Falta paridade com Manus (`Nova tarefa`, `Agente`, `Plugins`, `Agendado`, `Biblioteca`, `Projetos`, `Tarefas`).
 
-### TAREFA 1.1 — Adicionar item "Agente" na sidebar `⬜ A fazer`
+### TAREFA 1.1 — Adicionar item "Agente" na sidebar `✅ Feito`
 Criar rota/página `Agente` com painel de Subtarefas e ícones superiores.
 ```gherkin
 Funcionalidade: Item de navegação Agente
@@ -33,6 +43,8 @@ Funcionalidade: Item de navegação Agente
 - Nova página `frontend/src/pages/AgentPage.vue` + rota `/chat/agent` (ou `/agent/:sessionId`) em `router/index.ts`, seguindo o padrão de `ChatPage.vue`.
 - Novo item na sidebar entre "Nova Tarefa" e "Biblioteca" em `SessionSidebar.vue` (mesmo padrão do bloco Claw, `SessionSidebar.vue:84-97`).
 - i18n: chave `Agent` / `Subtasks` em `src/locales/{en,pt,zh}.ts`.
+
+**Implementado:** `GET /sessions/{id}/subtasks` (`session_routes.py`, `agent_service.get_session_subtasks`, wrapper em torno do `Session.get_last_plan()` já existente) + `frontend/src/pages/AgentPage.vue` + item na sidebar entre "Nova Tarefa" e "Biblioteca". Como "Agente" não carrega um `sessionId` pela URL, mostra as Subtarefas da tarefa mais recente do usuário. 4 testes de integração em `backend/tests/test_session_subtasks.py`.
 
 **Depende de:** nenhuma.
 
@@ -92,7 +104,7 @@ Funcionalidade: Item Manus Claw
 
 ---
 
-### TAREFA 1.5 — Menu de contexto da Tarefa na lista lateral `🟡 Parcial`
+### TAREFA 1.5 — Menu de contexto da Tarefa na lista lateral `✅ Feito`
 Adicionar ações faltantes: `Compartilhar`, `Abrir em nova aba`, `Arquivar` (além das existentes: Renomear, Fixar, Favoritar, Mover para projeto, Excluir).
 ```gherkin
 Funcionalidade: Menu de contexto de tarefa
@@ -116,6 +128,9 @@ Funcionalidade: Menu de contexto de tarefa
 - Nova função em `api/agent.ts` (`archiveSession`/`unarchiveSession`), espelhando `favoriteSession`.
 - i18n: `Archive` / `Unarchive` / `Task archived`.
 
+**Implementado:** exatamente como planejado — `is_archived` em `Session`/`SessionDocument` + índice composto, `POST`/`DELETE /sessions/{id}/archive`, `agent_service.update_session_archived`. `get_all_sessions`/`find_summaries_by_user_id` ganharam filtros `archived`/`shared` (usados também pela 12.1). Item "Arquivar" em `SessionItem.vue` (usado pela sidebar e — via 4.3 — pelo cabeçalho da tarefa). 5 testes em `backend/tests/test_session_archive.py`.
+**Bug real encontrado e corrigido no caminho:** o push WS de "upsert" da lista de sessões não filtrava arquivadas como o snapshot/REST filtram — arquivar uma tarefa a fazia reaparecer na sidebar assim que o próprio evento de upsert chegava. `upsertSessionItem` agora trata `is_archived: true` como remoção.
+
 **Depende de:** nenhuma.
 
 ---
@@ -135,7 +150,7 @@ Funcionalidade: Filtro de tarefas
 
 ## Épico 2 — Tela Inicial (Home) · `P1`
 
-### TAREFA 2.1 — Ampliar chips de ações rápidas `🟡 Parcial`
+### TAREFA 2.1 — Ampliar chips de ações rápidas `✅ Feito`
 Alinhar chips ao Manus: `Criar slides`, `Criar site`, `Design`, `Criar jogos`, e em `Mais`: Desenvolver aplicativos, Vídeo, Tarefa agendada, Wide Research, Planilha, Visualização, Áudio, Modo de chat, Playbook.
 ```gherkin
 Funcionalidade: Chips de ação rápida
@@ -154,7 +169,9 @@ Funcionalidade: Chips de ação rápida
 - Editar arrays `primaryChips`/`extraChips` em `HomePage.vue`; adicionar campo `action?: 'schedule' | 'chat-mode'` para os dois chips que não são prompt puro.
 - i18n para os 9 rótulos novos.
 
-**Depende de:** 15.2 (para o chip "Tarefa agendada").
+**Implementado com um ajuste de escopo:** os 9 itens estão em `HomePage.vue`. "Modo de chat" alterna `taskMode` local e o passa para `createSession` (reusa o prop `taskMode`/`update:taskMode` que `ModelSelectorDropdown.vue` já expunha para o `ChatPage`, nunca ligado na Home). "Tarefa agendada" ficou como preenchimento de prompt (como os demais chips) em vez de abrir um modal — TAREFA 15.2 não faz parte deste lote; documentado como ajuste no código.
+
+**Depende de:** 15.2 (para o chip "Tarefa agendada" abrir o modal — não implementado neste lote).
 
 ---
 
@@ -226,7 +243,9 @@ Funcionalidade: Menu de anexos do composer
 - Estender `plusMenuItems` em `ChatBox.vue:88-90` e `handlePlusSelect` com um `switch` por `item.id`, cada braço abrindo o modal/painel correspondente (`LibraryPickerDialog.vue` novo, `RecentTasksPickerDialog.vue` novo, etc.).
 - Itens sem backend pronto (Google Drive, Habilidades) ficam com estado "em breve"/desabilitado até as dependências fecharem — não bloqueiam o resto do menu.
 
-**Depende de:** 9.2, 9.3 (parcialmente).
+**Implementado:** `Da Biblioteca` (`LibraryPickerDialog.vue`, reusa `GET /library/files`, anexa o `FileInfo` direto sem reupload) e `Tarefas recentes` (`RecentTasksPickerDialog.vue`, reusa `GET /sessions`, insere uma referência de texto no composer) — ambos novos componentes em `frontend/src/components/chatbox/`. `Plano (Ctrl+/)` liga um evento novo `ui:open-plan-panel` no `eventBus` que `PlanPanel.vue` escuta para se auto-expandir; também é um atalho de teclado real no editor TipTap. `Usar Habilidades`, `Google Drive` e `Outras fontes` continuam bloqueados por 9.2/9.3.
+
+**Depende de:** 9.2, 9.3 (para os 3 itens que restam).
 
 ---
 
@@ -270,7 +289,7 @@ Funcionalidade: Seletor de ambiente
 
 ## Épico 4 — Cabeçalho da Tarefa · `P1`
 
-### TAREFA 4.1 — Painel de métricas de uso da tarefa `⬜ A fazer`
+### TAREFA 4.1 — Painel de métricas de uso da tarefa `✅ Feito`
 Exibir métricas **não financeiras**: tempo trabalhado, páginas visualizadas, comandos executados, APIs chamadas, arquivos criados, avaliação por estrelas. **Excluir "créditos".**
 ```gherkin
 Funcionalidade: Painel de uso da tarefa
@@ -294,6 +313,8 @@ Funcionalidade: Painel de uso da tarefa
 **Frontend**
 - Novo componente `UsagePanel.vue` (popover a partir de um botão novo no header de `ChatPage.vue`, ao lado do botão "Task Logs" já existente), consumindo a nova rota.
 - Estrelas: componente pequeno reusável, PATCH otimista com rollback em erro (padrão já usado em `favoriteSession`).
+
+**Implementado:** a agregação virou uma função pura, `domain/services/session_usage.py::compute_session_usage(events, files)`, para ficar testável sem servidor — 9 testes unitários (soma de duração, dedupe de passo replanejado, contagem por tipo de ferramenta, e um teste explícito garantindo que nenhuma chave contém "credit"). `files_created` acabou reusando `len(session.files)` (a mesma lista deduplicada que a investigação do BUG-2 mapeou) em vez de reescanear eventos de arquivo. `UsagePanel.vue` é um Popover (mesmo padrão do popover de Compartilhar) com um botão nível gauge no cabeçalho, ao lado de "Task Logs". 7 testes de integração para as rotas `GET .../usage` e `POST .../rating`.
 
 **Depende de:** nenhuma.
 
@@ -335,14 +356,11 @@ Funcionalidade: Menu de opções da tarefa aberta
 ```
 **Já implementado:** `Renomear`, `Mover para projeto`, `Fixar`, `Adicionar aos favoritos`, `Excluir` já existem em `ChatPage.vue:816-832` (`handleMoreClick`), reusando os mesmos endpoints do menu da sidebar.
 
-**Escopo residual:** `Agendar tarefa` (depende de 15.2) e `Arquivar` (depende de 1.5 — mesma rota/campo `is_archived`).
+**Escopo residual:** ~~`Agendar tarefa` (depende de 15.2) e~~ `Arquivar` — **implementado** (`ChatPage.vue`, item "Archive task" em `handleMoreClick`, reusa `agentApi.archiveSession` de 1.5; arquivar a tarefa aberta redireciona para a Home, igual ao Excluir). `Agendar tarefa` segue pendente, depende de 15.2 (fora deste lote).
 
-**Backend:** nenhum além de 1.5 e 15.2.
+**Backend:** nenhum além de 1.5 (já feito) e 15.2 (pendente).
 
-**Frontend**
-- Dois itens novos em `handleMoreClick` (`ChatPage.vue`), reusando `archiveSession` (1.5) e abrindo o modal de agendamento (15.2) pré-preenchido com o prompt da última mensagem do usuário.
-
-**Depende de:** 1.5, 15.2.
+**Depende de:** 1.5 (feito), 15.2 (pendente).
 
 ---
 
@@ -362,7 +380,7 @@ Funcionalidade: Progresso da tarefa
 
 ---
 
-### TAREFA 5.2 — Sugestões de follow-up pós-conclusão `⬜ A fazer`
+### TAREFA 5.2 — Sugestões de follow-up pós-conclusão `✅ Feito`
 Exibir sugestões de próximos passos ao final da tarefa.
 ```gherkin
 Funcionalidade: Sugestões de follow-up
@@ -380,11 +398,13 @@ Funcionalidade: Sugestões de follow-up
 - `ChatTaskCompleted.vue` recebe `follow-ups: string[]` e renderiza como chips clicáveis que preenchem e enviam o composer (mesmo padrão de `handleChipClick` da Home).
 - `types/event.ts` / `types/message.ts` ganham o campo `follow_ups`.
 
+**Implementado:** `FinalResult.follow_ups` (0-4 sugestões, prompt orienta a não preencher com genérico se nada fizer sentido) → `MessageEvent.follow_ups` → `MessageEventData` (wire format, cobre tanto streaming ao vivo quanto replay de histórico, os dois já passam por `EventMapper`). `ChatTaskCompleted.vue` renderiza como chips; clicar envia direto via `chat()`. 6 testes de backend + 5 de frontend.
+
 **Depende de:** nenhuma.
 
 ---
 
-### TAREFA 5.3 — Modal de pré-visualização de arquivo `🟡 Parcial`
+### TAREFA 5.3 — Modal de pré-visualização de arquivo `✅ Feito`
 Adicionar preview com tela cheia, favoritar e download.
 ```gherkin
 Funcionalidade: Pré-visualização de arquivo
@@ -402,13 +422,15 @@ Funcionalidade: Pré-visualização de arquivo
 **Frontend**
 - Botão `Star` novo em `FilePreviewerChrome.vue`, ao lado do de download, visível apenas quando `fileInfo.file_id` existe; chama `favoriteLibraryFile`/`unfavoriteLibraryFile` de `api/project.ts`.
 
-**Depende de:** BUG-2 (arquivos sem `file_id`/`size` não conseguem favoritar).
+**Implementado como planejado.** Estado inicial de favorito só é conhecido quando quem abre o preview já sabe (ex. `LibraryPage.vue`); outros pontos de entrada (anexos de chat) começam desmarcados — não há endpoint de "status de favorito" avulso para consultar. **Nota de escopo:** o preview de imagens não tem o `FilePreviewerChrome` (gate `v-if="!isImage"` pré-existente, não relacionado a esta tarefa) — o botão de favoritar herda essa mesma lacuna.
+
+**Depende de:** ~~BUG-2~~ — não bloqueou; ver correção do BUG-2 no Épico 18 (a causa raiz suposta não se confirmou).
 
 ---
 
 ## Épico 6 — Biblioteca / Arquivos · `P1`
 
-### TAREFA 6.1 — Filtros de tipo completos `🟡 Parcial`
+### TAREFA 6.1 — Filtros de tipo completos `✅ Feito`
 Adicionar `Slides / Sites / Documentos / Planilhas / Imagens / Áudio e Vídeo / Outros` (paridade com Manus).
 ```gherkin
 Funcionalidade: Filtros da Biblioteca
@@ -425,6 +447,8 @@ Funcionalidade: Filtros da Biblioteca
 
 **Frontend**
 - Estender `DocType` e `docTypeOptions` em `LibraryPage.vue`, adicionando as funções `isSlideFile`/`isSiteFile`/`isSpreadsheetFile` ao lado de `isMediaFile`/`isDocumentFile`.
+
+**Implementado com um desvio de arquitetura:** a classificação saiu de dentro de `LibraryPage.vue` para um módulo puro e testado isoladamente, `frontend/src/utils/libraryFileType.ts::classifyLibraryFile()` — 20 testes cobrindo os 7 buckets. As 7 categorias do Manus (Slides/Sites/Documentos/Planilhas/Imagens/Áudio e Vídeo/Outros) substituem as 4 antigas (All/Documents/Media/Others).
 
 **Depende de:** nenhuma.
 
@@ -443,7 +467,7 @@ Funcionalidade: Agrupamento na Biblioteca
 
 ---
 
-### TAREFA 6.3 — Corrigir bug de tamanho "0 B" `⬜ A fazer`
+### TAREFA 6.3 — Corrigir bug de tamanho "0 B" `✅ Não reproduziu`
 Ver **BUG-2** no Épico 18 — causa raiz e correção detalhadas lá; esta tarefa é o mesmo item visto pela Biblioteca.
 ```gherkin
 Funcionalidade: Tamanho de arquivo correto
@@ -452,7 +476,9 @@ Funcionalidade: Tamanho de arquivo correto
     Quando visualizo suas informações
     Então o tamanho exibido é maior que "0 B" e reflete o tamanho real
 ```
-**Depende de:** BUG-2.
+**Investigado e não reproduziu.** Consulta direta ao Mongo do stack de dev mostrou `session.files[].size` correto para todo arquivo, inclusive dois `.zip` de ~30MB e ~13MB. `LibraryFileCard.vue`/`SessionFileList.vue` (os componentes apontados pelo backlog original) **não renderizam tamanho nenhum** — não há onde "0 B" apareceria hoje na Biblioteca. Ver Épico 18 para o que foi corrigido mesmo assim (hardening de `formatFileSize`, usado em outros 3 componentes).
+
+**Depende de:** BUG-2 (ver correção lá).
 
 ---
 
@@ -703,8 +729,8 @@ Funcionalidade: Controles de dados
 
 | Subseção | Status | Nota |
 |---|---|---|
-| Tarefas/Arquivos compartilhados | `⬜ A fazer`, backend pronto | `is_shared` já existe em `SessionDocument`; só falta a tela agregadora. |
-| Tarefas arquivadas | `⬜ A fazer`, depende de 1.5 | Precisa do campo `is_archived` (TAREFA 1.5). |
+| Tarefas/Arquivos compartilhados | `✅ Feito` | Aba "Compartilhados" com opção de deixar de compartilhar inline. |
+| Tarefas arquivadas | `✅ Feito` | Aba "Arquivadas" com opção de restaurar inline. |
 | Sites | `⬜ Bloqueado` | Não há pipeline de publicação de site no repositório. |
 | Aplicativos | `⬜ Bloqueado` | Não há conceito de "app publicado". |
 | Domínios comprados | `⬜ Bloqueado` | Não há integração de registro de domínio. |
@@ -716,7 +742,9 @@ Funcionalidade: Controles de dados
 **Frontend**
 - Nova `pages/DataControlsPage.vue` com abas por subseção; só as duas primeiras (compartilhados, arquivadas) renderizam lista real — as demais mostram estado "não disponível" em vez de tela vazia enganosa.
 
-**Depende de:** 1.5.
+**Implementado como planejado.** `/data-controls`, alcançável pelo menu do usuário (17.3). Smoke-testado à mão contra a API real: arquivar uma tarefa compartilhada corretamente some da aba "Compartilhados" também (a interação entre os dois filtros foi verificada, não só cada um isoladamente).
+
+**Depende de:** 1.5 (feito).
 
 ---
 
@@ -811,7 +839,7 @@ Funcionalidade: Criar tarefa agendada
 
 ## Épico 16 — Busca Global · `P1`
 
-### TAREFA 16.1 — Modal de busca global `🟡 Parcial`
+### TAREFA 16.1 — Modal de busca global `✅ Feito`
 Busca com resultados agrupados por data e prévia de mensagem.
 ```gherkin
 Funcionalidade: Busca global
@@ -830,6 +858,9 @@ Funcionalidade: Busca global
 
 **Frontend**
 - `SearchDialog.vue` troca a filtragem local por chamada debounced a `GET /search`, mantendo o agrupamento por data já implementado.
+
+**Implementado como planejado.** A lógica de match/snippet/ordenação virou uma função pura, `domain/services/search_messages.py::search_messages()` (10 testes unitários), já que não há um jeito de injetar uma mensagem sintética via REST fora de uma sessão de agente real para testar a rota fim-a-fim — a rota em si tem 6 testes de integração (auth, validação, isolamento por usuário). No frontend, cada resultado vira uma linha própria (não uma por sessão) já que duas mensagens diferentes na mesma tarefa são dois achados legítimos; guarda de resposta obsoleta via contador de sequência. 6 testes de componente (debounce, linhas por mensagem, descarte de resposta obsoleta).
+**Débito de performance mantido como estava planejado:** scan completo dos eventos de cada sessão a cada busca — aceitável na escala atual, índice de texto/coleção derivada fica para quando parar de ser.
 
 **Depende de:** nenhuma.
 
@@ -862,7 +893,7 @@ Funcionalidade: Preferências de comunicação
 
 ---
 
-### TAREFA 17.2 — Atalhos editáveis `🟡 Parcial`
+### TAREFA 17.2 — Atalhos editáveis `✅ Feito (MVP)`
 Tornar os 5 atalhos configuráveis (hoje há 1, apenas de referência).
 ```gherkin
 Funcionalidade: Atalhos personalizáveis
@@ -882,11 +913,13 @@ Funcionalidade: Atalhos personalizáveis
 **Frontend**
 - `ShortcutsSettings.vue` ganha um "gravador" de atalho por linha (captura `keydown`, normaliza modificadores) + os handlers reais em `SessionSidebar.vue`/`ChatBox.vue`/`ChatPage.vue` passam a ler do `useShortcuts.ts` em vez de valores fixos (`handleKeydown` em `SessionSidebar.vue:799-804` hoje tem `Ctrl+K` hardcoded).
 
+**Implementado no escopo do MVP (só o atalho que já existia de verdade):** `useShortcuts.ts` guarda `ShortcutBinding{ctrl,meta,shift,alt,key}` em `localStorage`, com `matches()`/`formatBinding()`/`resetBinding()`. `ShortcutsSettings.vue` tem um gravador real (clica, pressiona a combinação, salva; exige pelo menos um modificador). `SessionSidebar.vue`'s `handleKeydown` lê de `matches('new-task', event)` em vez do `Ctrl+K` fixo. 7 testes unitários. **Não implementado:** os outros 4 atalhos do Manus real — não foram inventados 4 ações novas sem que o usuário confirme quais deveriam existir; a mecânica para adicioná-los já existe (adicionar a `SHORTCUT_DEFS` + um handler real chamando `matches()`).
+
 **Depende de:** nenhuma (MVP).
 
 ---
 
-### TAREFA 17.3 — Menu de usuário completo `🟡 Parcial`
+### TAREFA 17.3 — Menu de usuário completo `✅ Feito`
 Adicionar `Personalização`, `Página inicial`, `Obter ajuda`, `Documentos` ao menu do usuário.
 ```gherkin
 Funcionalidade: Menu do usuário
@@ -903,6 +936,8 @@ Funcionalidade: Menu do usuário
 **Frontend**
 - 4 itens novos em `UserMenu.vue`, mesmo padrão visual dos 3 existentes.
 
+**Implementado.** Os 4 itens (Personalização, Página inicial, Obter ajuda, Documentos) mais um quinto acrescentado depois — "Controles de dados" (ver TAREFA 12.1) — foram para `UserMenu.vue`, reaproveitando `openSettingsDialog`/`router.push` conforme planejado.
+
 **Depende de:** nenhuma.
 
 ---
@@ -912,7 +947,7 @@ Funcionalidade: Menu do usuário
 | ID | Descrição | Origem | Status |
 |----|-----------|--------|--------|
 | BUG-1 | "Manus Claw" renderiza JSON cru em vez de UI | Sidebar local | `⬜ Investigar` |
-| BUG-2 | Tamanho de arquivo exibido como "0 B" para arquivos comprimidos | Biblioteca / modal de arquivos | `⬜ Causa raiz apurada` |
+| BUG-2 | Tamanho de arquivo exibido como "0 B" para arquivos comprimidos | Biblioteca / modal de arquivos | `✅ Não reproduziu — hardening aplicado mesmo assim` |
 | BUG-3 | Tela em branco após clicar no ícone de duplicar dentro da tarefa | Chat local | `⬜ Investigar` |
 
 ```gherkin
@@ -923,19 +958,16 @@ Funcionalidade: Correção de débitos técnicos
     Então uma nova tarefa/estado é exibido sem tela em branco
 ```
 
-### BUG-2 — causa raiz confirmada
-Em `backend/app/domain/services/agents/execution.py:118-120`, os anexos de um resultado final são construídos assim:
-```python
-attachments = [FileInfo(file_path=file_path) for file_path in result.attachments]
-```
-Isso cria um `FileInfo` **só com `file_path`** — sem `file_id`, `size` ou `content_type`. Esse objeto entra em `session.files`, e a Biblioteca (`agent_service.get_library_files`, `agent_service.py:281`) lê `size` como `None`; a UI então formata `None` como "0 B" em vez de omitir o dado.
+### BUG-2 — investigado, não reproduziu; causa raiz original estava errada
 
-**Backend**
-- Em `execution.py`, ao montar cada `FileInfo`, consultar a API de arquivos do sandbox (`sandbox` já expõe `stat`/`ls` via `domain/external/sandbox.py`) para preencher `size` e `content_type` reais antes de anexar — ou, mais simples, registrar o arquivo via `file_service.upload_file` a partir do sandbox no momento em que o agente o entrega, obtendo um `file_id` real (o que também resolve por tabela a limitação apontada na TAREFA 5.3, "favoritar exige `file_id`").
-- Cobrir com teste em `backend/tests/` (`test_llm_gateway.py` ou um novo `test_agent_service_library.py`) verificando que `get_library_files` nunca retorna `size=None` para um anexo gerado pelo agente.
+O diagnóstico anterior deste documento apontava `execution.py:118-120` (`FileInfo(file_path=file_path)`, sem `size`) como a causa — **essa leitura estava incompleta**. Existe um passo de enriquecimento em `agent_task_runner.py` (`_sync_file_to_storage`/`_sync_message_attachments_to_storage`) que baixa o arquivo do sandbox e o re-registra via `file_storage.upload_file` antes de persistir em `session.files`, preenchendo `size`/`content_type`/`file_id` reais — tanto para anexos gerados pelo agente quanto para os enviados pelo usuário.
 
-**Frontend (defesa em profundidade, independente do fix de backend)**
-- `LibraryFileCard.vue` e `SessionFileList.vue` devem omitir o tamanho quando `size` for `null`/`undefined`, em vez de formatá-lo como "0 B" — corrige a exibição mesmo para dados legados já persistidos sem `size`.
+**Confirmado com dados reais:** consulta direta ao Mongo do stack de dev (`docker exec ai-manus-mongodb-1 mongosh`) mostrou que **todo** arquivo em `session.files[].size`, de sessões de uso real, está correto — inclusive dois `.zip` de ~30MB e ~13MB. Também: `LibraryFileCard.vue` e `SessionFileList.vue` (os componentes que este documento apontava como exibindo "0 B") **não renderizam tamanho nenhum** hoje — não há onde "0 B" apareceria na Biblioteca. `formatFileSize()` (`utils/fileType.ts`) de fato tratava `null`/`undefined` como `'0 B'`, mas só é chamada por `ChatAttachmentList.vue`/`TaskLogsDrawer.vue`/`ChatBoxFiles.vue`, nunca pela Biblioteca.
+
+**Aplicado mesmo assim (hardening, não correção de um bug confirmado):**
+- `formatFileSize()` agora distingue tamanho desconhecido (`null`/`undefined` → string vazia) de um arquivo genuinamente vazio (`0` → `'0 B'`). Os 3 componentes que a chamam passam a omitir o trecho "· tamanho" quando vazio. 6 testes em `frontend/src/utils/__tests__/fileType.spec.ts`.
+
+**Se o sintoma original ("0 B" na Biblioteca) for observado de novo:** reproduzir com um upload real e capturar o `file_id`/`session_id` exatos antes de investigar mais — o caminho de dados atual não sustenta a hipótese antiga.
 
 ### BUG-1 e BUG-3 — sem causa raiz confirmada
 Não foi possível confirmar a causa por leitura estática nesta rodada de refinamento — evitar diagnóstico especulativo aqui. Próximo passo antes de codar:
