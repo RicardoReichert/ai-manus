@@ -6,7 +6,10 @@
       <div class="w-[calc(100%+40px)] -mx-5 bg-[var(--background-gray-main)] sticky top-0 z-10 ps-[14px] pe-[20px] py-[12px] border-b border-transparent">
         <div class="flex justify-between items-center w-full">
           <div class="relative z-20 items-center flex-shrink-0 flex">
-            <ModelSelectorDropdown @update:modelId="setSelectedModel" />
+            <ModelSelectorDropdown
+              :taskMode="taskMode"
+              @update:modelId="setSelectedModel"
+              @update:taskMode="taskMode = $event" />
           </div>
           <div class="flex items-center gap-2">
             <a v-if="showGithubButton"
@@ -49,10 +52,13 @@
             v-for="chip in visibleChips"
             :key="chip.label"
             type="button"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[var(--fill-tsp-white-main)] hover:bg-[var(--fill-tsp-white-dark)] text-[var(--text-secondary)] transition-colors clickable cursor-pointer"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors clickable cursor-pointer"
+            :class="chip.action === 'chat-mode' && taskMode === 'chat'
+              ? 'bg-[var(--fill-blue)] text-[var(--text-blue)] hover:bg-[var(--fill-blue)]'
+              : 'bg-[var(--fill-tsp-white-main)] hover:bg-[var(--fill-tsp-white-dark)] text-[var(--text-secondary)]'"
             @click="handleChipClick(chip)"
           >
-            <component :is="chip.icon" :size="14" class="text-[var(--icon-tertiary)]" />
+            <component :is="chip.icon" :size="14" :class="chip.action === 'chat-mode' && taskMode === 'chat' ? 'text-[var(--icon-blue)]' : 'text-[var(--icon-tertiary)]'" />
             <span>{{ $t(chip.label) }}</span>
           </button>
 
@@ -80,8 +86,9 @@ import ModelSelectorDropdown from '../components/ModelSelectorDropdown.vue';
 import { createSession } from '../api/agent';
 import { showErrorToast } from '../utils/toast';
 import {
-  Github, Presentation, Globe, Palette,
-  Gamepad2, ChartColumn, FileText, Search, Table,
+  Github, Presentation, Globe, Palette, Gamepad2, Table,
+  AppWindow, Video, CalendarClock, Telescope, BarChart3, Music,
+  MessagesSquare, BookOpen,
 } from 'lucide-vue-next';
 import type { FileInfo } from '../api/file';
 import { useFilePreviewer } from '../composables/useFilePreviewer';
@@ -100,6 +107,7 @@ const showGithubButton = ref(false);
 const githubRepositoryUrl = ref('https://github.com/simpleyyt/ai-manus');
 const chatBoxRef = ref<InstanceType<typeof ChatBox> | null>(null);
 const { selectedModelId, ensureModelsLoaded, setSelectedModel } = useActiveModel();
+const taskMode = ref<'agent' | 'chat'>('agent');
 
 const serifFontFamily = 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif';
 
@@ -109,6 +117,8 @@ interface SuggestionChip {
   label: string;
   prompt: string;
   icon: FunctionalComponent;
+  /** 'chat-mode' switches the composer to chat mode instead of filling a prompt. */
+  action?: 'chat-mode';
 }
 
 const primaryChips: SuggestionChip[] = [
@@ -118,11 +128,19 @@ const primaryChips: SuggestionChip[] = [
   { label: 'Create games', prompt: 'Create games prompt', icon: Gamepad2 },
 ];
 
+// Official Manus "More" list. "Scheduled task" falls back to a plain prompt
+// fill for now — it should open the scheduling modal (TAREFA 15.2), which
+// isn't built yet; wire it up once that modal exists.
 const extraChips: SuggestionChip[] = [
-  { label: 'Analyze data', prompt: 'Analyze data prompt', icon: ChartColumn },
-  { label: 'Research', prompt: 'Research prompt', icon: Search },
-  { label: 'Write report', prompt: 'Write report prompt', icon: FileText },
+  { label: 'Develop apps', prompt: 'Develop apps prompt', icon: AppWindow },
+  { label: 'Video', prompt: 'Video prompt', icon: Video },
+  { label: 'Scheduled task', prompt: 'Scheduled task prompt', icon: CalendarClock },
+  { label: 'Wide Research', prompt: 'Wide Research prompt', icon: Telescope },
   { label: 'Create spreadsheet', prompt: 'Create spreadsheet prompt', icon: Table },
+  { label: 'Visualization', prompt: 'Visualization prompt', icon: BarChart3 },
+  { label: 'Audio', prompt: 'Audio prompt', icon: Music },
+  { label: 'Chat mode', prompt: '', icon: MessagesSquare, action: 'chat-mode' },
+  { label: 'Playbook', prompt: 'Playbook prompt', icon: BookOpen },
 ];
 
 const showAllChips = ref(false);
@@ -131,6 +149,10 @@ const visibleChips = computed(() =>
 );
 
 const handleChipClick = (chip: SuggestionChip) => {
+  if (chip.action === 'chat-mode') {
+    taskMode.value = taskMode.value === 'chat' ? 'agent' : 'chat';
+    return;
+  }
   message.value = t(chip.prompt);
   chatBoxRef.value?.focus();
 };
@@ -150,7 +172,7 @@ const handleSubmit = async () => {
     isSubmitting.value = true;
 
     try {
-      const session = await createSession(undefined, undefined, selectedModelId.value || undefined);
+      const session = await createSession(undefined, taskMode.value, selectedModelId.value || undefined);
       const sessionId = session.session_id;
 
       router.push({
