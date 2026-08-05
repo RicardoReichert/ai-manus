@@ -13,6 +13,10 @@ export interface FileInfo {
   upload_date: string;
   metadata?: Record<string, any>;
   file_url?: string;
+  /** Only known when the caller already fetched it (e.g. from the Library
+   * listing); other callers (chat attachments, task logs) leave it unset and
+   * the previewer's favorite button starts unfilled. */
+  is_favorite?: boolean;
 }
 
 

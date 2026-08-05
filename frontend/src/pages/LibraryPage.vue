@@ -380,6 +380,7 @@ const previewFile = (file: LibraryFileItem) => {
     content_type: file.content_type || undefined,
     size: file.size ?? undefined,
     upload_date: file.upload_date || '',
+    is_favorite: file.is_favorite,
   }
   showFilePreviewer(info)
 }

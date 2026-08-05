@@ -19,8 +19,10 @@
           :file-type="fileType"
           :is-image="isImagePreview"
           :view-mode="viewMode"
+          :is-favorite="isFavorite"
           @download="download"
           @close="hideFilePreviewer"
+          @toggle-favorite="toggleFavorite"
         />
         <div class="flex flex-1 min-h-0 w-full relative">
           <component :is="fileType.preview" :file="fileInfo" @close="hideFilePreviewer" />
@@ -56,8 +58,10 @@
             :file-type="fileType"
             :is-image="isImagePreview"
             :view-mode="viewMode"
+            :is-favorite="isFavorite"
             @download="download"
             @close="hideFilePreviewer"
+            @toggle-favorite="toggleFavorite"
           />
           <div class="flex flex-1 min-h-0 w-full relative">
             <component :is="fileType.preview" :file="fileInfo" @close="hideFilePreviewer" />
@@ -69,12 +73,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useFilePreviewer } from '../composables/useFilePreviewer'
 import { getFileDownloadUrl } from '../api/file'
 import { getFileType } from '../utils/fileType'
 import { useResizeObserver } from '../composables/useResizeObserver'
+import { favoriteLibraryFile, unfavoriteLibraryFile } from '../api/project'
+import { showErrorToast, showSuccessToast } from '../utils/toast'
+import { useI18n } from 'vue-i18n'
 import FilePreviewerChrome from './FilePreviewerChrome.vue'
+
+const { t } = useI18n()
 
 const {
   isShow,
@@ -119,6 +128,28 @@ const download = async () => {
   if (!fileInfo.value) return
   const url = await getFileDownloadUrl(fileInfo.value)
   window.open(url, '_blank')
+}
+
+// TAREFA 5.3 — favorite state is only known upfront when the caller passed
+// is_favorite (e.g. from the Library listing); other callers start unfilled.
+const isFavorite = ref(false)
+watch(fileInfo, (info) => {
+  isFavorite.value = info?.is_favorite ?? false
+})
+
+const toggleFavorite = async () => {
+  const info = fileInfo.value
+  if (!info?.file_id) return
+  try {
+    const result = isFavorite.value
+      ? await unfavoriteLibraryFile(info.file_id)
+      : await favoriteLibraryFile(info.file_id)
+    isFavorite.value = result.is_favorite
+    info.is_favorite = result.is_favorite
+    showSuccessToast(result.is_favorite ? t('Added to favorite') : t('Removed from favorite'))
+  } catch {
+    showErrorToast(t('Failed to update favorite'))
+  }
 }
 
 defineExpose({
