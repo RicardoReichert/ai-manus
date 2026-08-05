@@ -20,12 +20,32 @@ class ClawRuntime(Protocol):
 
     creates_immediately: bool
 
-    async def create(self, claw_id: str, api_key: str) -> ClawInstanceInfo:
-        """Create a new claw instance. Returns connection info."""
+    async def create(self, session_id: str, api_key: str, volume_name: str) -> ClawInstanceInfo:
+        """Create a new claw container, attached to a persistent volume.
+
+        ``volume_name`` is mounted at OpenClaw's home directory inside the
+        container — reusing the same name across calls (e.g. on restart with
+        a different model) is what lets OpenClaw's own native session memory
+        survive the container being destroyed and recreated. The volume
+        itself is never created here on destroy; only ``destroy_volume``
+        removes it, so a container restart never touches memory.
+        """
         ...
 
     async def destroy(self, instance_name: Optional[str]) -> None:
-        """Destroy a claw instance (best-effort, should not raise)."""
+        """Destroy a claw container (best-effort, should not raise).
+
+        Never removes the backing volume — that's ``destroy_volume``,
+        called only when a session itself is deleted.
+        """
+        ...
+
+    async def destroy_volume(self, volume_name: Optional[str]) -> None:
+        """Remove a session's persistent volume (best-effort, should not raise).
+
+        Only called on explicit session deletion — this is the one operation
+        that actually discards a session's memory for good.
+        """
         ...
 
     async def wait_for_ready(self, base_url: str) -> bool:

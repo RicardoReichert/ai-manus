@@ -8,7 +8,7 @@ from app.infrastructure.models.memory_serialization import deserialize_memory, s
 from app.domain.models.session import Session, SessionStatus, TaskMode
 from app.domain.models.file import FileInfo
 from app.domain.models.user import User, UserRole
-from app.domain.models.claw import Claw, ClawStatus, ClawMessage
+from app.domain.models.claw import ClawSession, ClawStatus, ClawMessage
 from app.domain.models.project import Project
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
@@ -226,10 +226,21 @@ class ModelConfigDocument(Document):
         ]
 
 
-class ClawDocument(BaseDocument[Claw], id_field="claw_id", domain_model_class=Claw):
-    """MongoDB document for Claw instance"""
-    claw_id: str
+class ClawSessionDocument(BaseDocument[ClawSession], id_field="claw_session_id", domain_model_class=ClawSession):
+    """MongoDB document for a Manus Claw session.
+
+    Replaces the old 1:1-per-user ClawDocument/"claws" collection — a user
+    may now own several sessions, each with its own container lifecycle,
+    pinned model, and persistent Docker volume (see docker_claw_runtime.py)
+    that lets OpenClaw's own native memory survive killing/recreating the
+    container. No migration from the old collection: Claw data is inherently
+    ephemeral/TTL-based, so this is a clean cutover.
+    """
+    claw_session_id: str
     user_id: str
+    name: Optional[str] = None
+    model_id: str
+    volume_name: str
     container_name: Optional[str] = None
     container_ip: Optional[str] = None
     api_key: str
@@ -237,15 +248,14 @@ class ClawDocument(BaseDocument[Claw], id_field="claw_id", domain_model_class=Cl
     error_message: Optional[str] = None
     expires_at: Optional[datetime] = None
     messages: List[ClawMessage] = []
-    # Registry model this user's Claw talks to. None = first enabled model.
-    # Resolved by the OpenAI proxy, so switching needs no container restart.
-    claw_model_id: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_active_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:
-        name = "claws"
+        name = "claw_sessions"
         indexes = [
-            "claw_id",
-            IndexModel([("user_id", ASCENDING)], unique=True),  # One claw per user
+            "claw_session_id",
+            IndexModel([("user_id", ASCENDING)]),  # many sessions per user now
+            IndexModel([("api_key", ASCENDING)], unique=True),
         ]

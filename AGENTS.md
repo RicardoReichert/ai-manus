@@ -110,12 +110,25 @@ delegated to an isolated sub-agent (`domain/services/agents/web.py`) instead of 
 functionality on large ones. Large/unrecognized hosted models default to full capability
 (no behavior change). See `domain/services/tools/profiles.py` for the `full`/`lean` definitions.
 
-**Claw model selection**: `PATCH /api/v1/claw/model` sets which registered model a user's Claw talks
-to (`ClawDocument.claw_model_id`); resolved per-request in `openai_routes.py`, so switching needs no
-container restart. In **dev mode** (`CLAW_ADDRESS=claw`, single shared container), every user
-authenticates with the same fixed `MANUS_API_KEY`, so `claw_service.verify_api_key` always resolves
-to a fixed service account rather than the real user — per-user model routing is only exercisable
-against a real per-user deployment (`DockerClawRuntime`), not the dev stack.
+**Claw sessions and model selection**: a user may own several Claw sessions (`/api/v1/claw/sessions`,
+`ClawSessionDocument`/`claw_sessions` collection — replaces the old 1:1-per-user `Claw`/`claws`
+collection). A session picks its model **at creation** (mandatory) and that model is pinned while its
+container is live; the only way to change it is `POST /claw/sessions/{id}/restart`, which kills the
+current container and starts a fresh one on the new model. Each session gets its own Docker volume
+(`ClawSession.volume_name`, mounted at `/home/node/.openclaw` by `DockerClawRuntime.create()`), which
+is what makes OpenClaw's own native conversational memory survive that restart — verified directly:
+a second model, on a freshly-created container reusing the same volume, correctly recalled
+information only ever told to the first, now-destroyed container's model. Expiry (TTL) only stops the
+container; the session record and its volume persist until the user explicitly deletes the session
+(`DELETE /claw/sessions/{id}`, which also removes the volume — the one operation that actually
+discards a session's memory). `openai_routes.py::_resolve_llm_target` resolves the model per-request
+from the session that owns the Bearer api_key (now per-session, not per-user), so a restart needs no
+config regeneration. In **dev mode** (`CLAW_ADDRESS=claw`, single shared `FixedClawRuntime` container),
+every session authenticates with the same fixed `MANUS_API_KEY`, so `claw_service.verify_api_key`
+always resolves to a fixed service account rather than the real user — per-session model routing is
+only exercisable against a real per-user deployment (`DockerClawRuntime`), not the dev stack; the
+volume-per-session mechanism is likewise a `DockerClawRuntime`-only concern (`FixedClawRuntime`'s
+`create`/`destroy`/`destroy_volume` are all no-ops, matching its single-shared-container design).
 
 ### Running Services Individually (Without Docker)
 

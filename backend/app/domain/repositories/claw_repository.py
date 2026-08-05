@@ -1,46 +1,51 @@
 from typing import Optional, List, Protocol
 
-from app.domain.models.claw import Claw, ClawMessage, ClawAttachment
+from app.domain.models.claw import ClawSession, ClawMessage, ClawAttachment
 
 
-class ClawRepository(Protocol):
-    """Repository interface for Claw aggregate"""
+class ClawSessionRepository(Protocol):
+    """Repository interface for the ClawSession aggregate.
 
-    async def get_by_user_id(self, user_id: str) -> Optional[Claw]:
-        """Get claw instance by user ID"""
+    Unlike the old 1:1-per-user Claw, a user may own several sessions —
+    every lookup here is keyed by ``session_id``, with ``list_by_user_id``
+    the one exception for populating a session list/switcher.
+    """
+
+    async def get_by_id(self, session_id: str) -> Optional[ClawSession]:
+        """Get a session by its own ID"""
         ...
 
-    async def get_by_id(self, claw_id: str) -> Optional[Claw]:
-        """Get claw instance by claw ID"""
+    async def list_by_user_id(self, user_id: str) -> List[ClawSession]:
+        """List all sessions owned by a user, most recently active first"""
         ...
 
-    async def get_by_api_key(self, api_key: str) -> Optional[Claw]:
-        """Get claw instance by API key"""
+    async def get_by_api_key(self, api_key: str) -> Optional[ClawSession]:
+        """Get the session whose container authenticates with this API key"""
         ...
 
-    async def create(self, claw: Claw) -> Claw:
-        """Create a new claw instance"""
+    async def create(self, session: ClawSession) -> ClawSession:
+        """Create a new session"""
         ...
 
-    async def update(self, claw: Claw) -> Claw:
-        """Update an existing claw instance"""
+    async def update(self, session: ClawSession) -> ClawSession:
+        """Update an existing session"""
         ...
 
-    async def delete_by_user_id(self, user_id: str) -> bool:
-        """Delete claw instance by user ID"""
+    async def delete_by_id(self, session_id: str) -> bool:
+        """Delete a session's record (caller destroys container/volume separately)"""
         ...
 
-    async def get_messages(self, user_id: str) -> List[ClawMessage]:
-        """Get chat message history for a user's claw"""
+    async def get_messages(self, session_id: str) -> List[ClawMessage]:
+        """Get the display-transcript chat history for a session"""
         ...
 
     async def append_message(
-        self, user_id: str, role: str, content: str = "",
+        self, session_id: str, role: str, content: str = "",
         attachments: Optional[List[ClawAttachment]] = None,
     ) -> None:
-        """Append a message to the claw's chat history"""
+        """Append a message to a session's chat history"""
         ...
 
-    async def clear_messages(self, user_id: str) -> None:
-        """Clear all chat messages for a user's claw"""
+    async def clear_messages(self, session_id: str) -> None:
+        """Clear all chat messages for a session"""
         ...

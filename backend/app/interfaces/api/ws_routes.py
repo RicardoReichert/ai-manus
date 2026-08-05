@@ -499,12 +499,17 @@ async def chat_ws(websocket: WebSocket):
         await cancel_stream()
 
 
-@router.websocket("/claw")
-async def claw_ws(websocket: WebSocket):
-    """Claw chat channel — same Cookie / Bearer resolve as /ws/sessions and /ws/chat.
+@router.websocket("/claw/{session_id}")
+async def claw_ws(websocket: WebSocket, session_id: str):
+    """Claw chat channel, scoped to one session — same Cookie / Bearer
+    resolve as /ws/sessions and /ws/chat.
+
+    A user may have several sessions; each gets its own connection (one
+    session per socket, matching /ws/vnc/{session_id}'s convention) so
+    events from one session's chat can never leak into another's.
 
     Client → Server:
-      {"type":"chat","message":"...","session_id":"default","file_ids":[]}
+      {"type":"chat","message":"...","file_ids":[]}
 
     Server → Client:
       {"type":"text","content":"..."}
@@ -520,14 +525,19 @@ async def claw_ws(websocket: WebSocket):
         await websocket.close(code=4001, reason="Unauthorized")
         return
 
+    claw_service = get_claw_service()
+    session = await claw_service.get_session(user.id, session_id)
+    if not session:
+        await websocket.close(code=4004, reason="Claw session not found")
+        return
+
     await websocket.accept()
 
-    claw_service = get_claw_service()
-    queue = claw_service.event_bus.subscribe(user.id)
+    queue = claw_service.event_bus.subscribe(session_id)
 
     async def _write_events() -> None:
         try:
-            pending = claw_service.get_pending_content(user.id)
+            pending = claw_service.get_pending_content(session_id)
             if pending:
                 await websocket.send_json({"type": "catchup", "content": pending})
 
@@ -545,8 +555,8 @@ async def claw_ws(websocket: WebSocket):
     async def _process_files(
         file_ids: list[str], uid: str
     ) -> tuple[str, list[ClawAttachment]]:
-        claw = await claw_service.claw_repository.get_by_user_id(uid)
-        claw_base_url = claw.http_base_url if claw else None
+        current = await claw_service.get_session(uid, session_id)
+        claw_base_url = current.http_base_url if current else None
 
         refs: list[str] = []
         attachments: list[ClawAttachment] = []
@@ -599,7 +609,6 @@ async def claw_ws(websocket: WebSocket):
                 msg_type = data.get("type")
                 if msg_type == "chat":
                     message = data.get("message", "").strip()
-                    session_id = data.get("session_id", "default")
                     file_ids = data.get("file_ids", [])
                     user_attachments: list[ClawAttachment] = []
 
@@ -610,10 +619,10 @@ async def claw_ws(websocket: WebSocket):
 
                     if message:
                         try:
-                            await claw_service.send_message(user.id, message, session_id)
+                            await claw_service.send_message(user.id, session_id, message)
                             if user_attachments:
                                 await claw_service.claw_repository.append_message(
-                                    user.id, "attachments", "user", attachments=user_attachments,
+                                    session_id, "attachments", "user", attachments=user_attachments,
                                 )
                         except Exception as e:
                             await websocket.send_json({"type": "error", "error": str(e)})
@@ -630,7 +639,7 @@ async def claw_ws(websocket: WebSocket):
         for t in pending:
             t.cancel()
     finally:
-        claw_service.event_bus.unsubscribe(user.id, queue)
+        claw_service.event_bus.unsubscribe(session_id, queue)
 
 
 @router.websocket("/vnc/{session_id}")

@@ -160,23 +160,28 @@ def _domain_message_to_openai_stream_chunks(message: LLMMessage, model: str) -> 
     ]
 
 
-async def _resolve_llm_target(requested_model: Optional[str], user_id: Optional[str] = None):
+async def _resolve_llm_target(requested_model: Optional[str], api_key: Optional[str] = None):
     """Resolve which registry model this Claw request should run against.
 
     Claw's openclaw.json hardcodes the alias ``manus-proxy/default`` (baked in
-    at container build time), so the alias cannot carry the user's choice.
-    Resolution order: the model the user picked for their Claw, then the
-    literal requested id if it happens to name a real registry entry, then the
-    first enabled model. This is what lets switching models in the Claw UI take
-    effect without regenerating config or restarting the container.
+    at container build time), so the alias cannot carry the session's choice.
+    Resolution order: the model pinned to the session that owns this api_key,
+    then the literal requested id if it happens to name a real registry
+    entry, then the first enabled model. This is what lets switching models
+    (via session restart) take effect without regenerating config.
+
+    Resolving by api_key rather than user_id matters now that a user can
+    have several concurrent sessions, each potentially on a different
+    model — the api_key IS the session, one-to-one, so it's the only
+    correct way to know which session's container is actually calling in.
     """
     desc = None
 
-    if user_id:
+    if api_key:
         claw_service = await _get_claw_service()
-        claw = await claw_service.claw_repository.get_by_user_id(user_id)
-        if claw and getattr(claw, "claw_model_id", None):
-            desc = await resolve_model(claw.claw_model_id)
+        session = await claw_service.claw_repository.get_by_api_key(api_key)
+        if session and session.model_id:
+            desc = await resolve_model(session.model_id)
 
     if desc is None:
         candidate = (requested_model or "").removeprefix("manus-proxy/")
@@ -200,9 +205,9 @@ async def _resolve_llm_target(requested_model: Optional[str], user_id: Optional[
     )
 
 
-async def _stream_llm_response(body: dict, user_id: Optional[str] = None) -> AsyncIterator[bytes]:
+async def _stream_llm_response(body: dict, api_key: Optional[str] = None) -> AsyncIterator[bytes]:
     try:
-        llm = await _resolve_llm_target(body.get("model"), user_id)
+        llm = await _resolve_llm_target(body.get("model"), api_key)
         messages = _openai_messages_to_domain(body.get("messages") or [])
         reply = await llm.ask(
             messages,
@@ -221,8 +226,8 @@ async def _stream_llm_response(body: dict, user_id: Optional[str] = None) -> Asy
         yield sse_error.encode("utf-8")
 
 
-async def _get_llm_response(body: dict, user_id: Optional[str] = None) -> dict:
-    llm = await _resolve_llm_target(body.get("model"), user_id)
+async def _get_llm_response(body: dict, api_key: Optional[str] = None) -> dict:
+    llm = await _resolve_llm_target(body.get("model"), api_key)
     messages = _openai_messages_to_domain(body.get("messages") or [])
     reply = await llm.ask(
         messages,
@@ -260,7 +265,7 @@ async def chat_completions(request: Request):
     try:
         if is_stream:
             return StreamingResponse(
-                _stream_llm_response(body, user_id),
+                _stream_llm_response(body, api_key),
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -268,7 +273,7 @@ async def chat_completions(request: Request):
                 },
             )
         else:
-            result = await _get_llm_response(body, user_id)
+            result = await _get_llm_response(body, api_key)
             return JSONResponse(content=result)
 
     except Exception as e:

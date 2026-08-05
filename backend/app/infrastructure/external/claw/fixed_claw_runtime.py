@@ -23,10 +23,13 @@ class FixedClawRuntime:
         self._address = address
         self.settings = get_settings()
 
-    async def create(self, claw_id: str, api_key: str) -> ClawInstanceInfo:
+    async def create(self, session_id: str, api_key: str, volume_name: str) -> ClawInstanceInfo:
         return ClawInstanceInfo(address=self._address)
 
     async def destroy(self, instance_name: Optional[str]) -> None:
+        pass
+
+    async def destroy_volume(self, volume_name: Optional[str]) -> None:
         pass
 
     async def wait_for_ready(self, base_url: str) -> bool:

@@ -1,50 +1,60 @@
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from app.domain.models.claw import ClawStatus, ClawMessage, ClawAttachment
 
 
-class ClawResponse(BaseModel):
-    """Claw instance response schema"""
+class ClawSessionResponse(BaseModel):
+    """A Manus Claw session, as returned to the frontend."""
     id: str
     user_id: str
+    name: Optional[str] = None
+    model_id: str
     status: ClawStatus
     container_name: Optional[str] = None
     error_message: Optional[str] = None
     expires_at: Optional[datetime] = None
-    claw_model_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    last_active_at: datetime
 
     @staticmethod
-    def from_domain(claw) -> 'ClawResponse':
-        return ClawResponse(
-            id=claw.id,
-            user_id=claw.user_id,
-            status=claw.status,
-            container_name=claw.container_name,
-            error_message=claw.error_message,
-            expires_at=claw.expires_at,
-            claw_model_id=claw.claw_model_id,
-            created_at=claw.created_at,
-            updated_at=claw.updated_at,
+    def from_domain(session) -> 'ClawSessionResponse':
+        return ClawSessionResponse(
+            id=session.id,
+            user_id=session.user_id,
+            name=session.name,
+            model_id=session.model_id,
+            status=session.status,
+            container_name=session.container_name,
+            error_message=session.error_message,
+            expires_at=session.expires_at,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+            last_active_at=session.last_active_at,
         )
 
 
-class UpdateClawModelRequest(BaseModel):
-    """Body for PATCH /claw/model. model_id=None resets to the default model."""
-    model_id: Optional[str] = None
+class ListClawSessionsResponse(BaseModel):
+    sessions: List[ClawSessionResponse]
 
 
-class ClawApiKeyResponse(BaseModel):
-    """API key response schema"""
-    api_key: str
+class CreateClawSessionRequest(BaseModel):
+    """Body for POST /claw/sessions. model_id is mandatory — a session
+    always starts pinned to a specific model, never "pick later"."""
+    model_id: str = Field(min_length=1)
+    name: Optional[str] = None
+
+
+class RestartClawSessionRequest(BaseModel):
+    """Body for POST /claw/sessions/{id}/restart. The only way to change a
+    session's model — never a silent runtime swap."""
+    model_id: str = Field(min_length=1)
 
 
 class ClawChatRequest(BaseModel):
     """Chat request schema"""
     message: str
-    session_id: str = "default"
 
 
 class ClawChatChunk(BaseModel):

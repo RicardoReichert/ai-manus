@@ -582,4 +582,15 @@ export default {
   'Auto-detected': 'Auto-detected',
   'Manually set': 'Manually set',
   'Local model (runs on your network, e.g. LM Studio, Ollama)': 'Local model (runs on your network, e.g. LM Studio, Ollama)',
+  // Manus Claw sessions (multi-session UI)
+  'Choose a model': 'Choose a model',
+  'New session': 'New session',
+  'Restart': 'Restart',
+  'Restarting with the new model — your conversation history is preserved.': 'Restarting with the new model — your conversation history is preserved.',
+  'Running': 'Running',
+  'Session {n}': 'Session {n}',
+  'Sessions': 'Sessions',
+  'Stopped': 'Stopped',
+  'This permanently deletes its memory and cannot be undone. To just switch models, use the model dropdown instead — it restarts without losing history.': 'This permanently deletes its memory and cannot be undone. To just switch models, use the model dropdown instead — it restarts without losing history.',
+  'This session’s container stopped. Its memory is preserved — restart to continue.': 'This session’s container stopped. Its memory is preserved — restart to continue.',
 }

@@ -581,4 +581,15 @@ export default {
   'Auto-detected': '自动检测',
   'Manually set': '手动设置',
   'Local model (runs on your network, e.g. LM Studio, Ollama)': '本地模型（运行在您的网络上，例如 LM Studio、Ollama）',
+  // Manus Claw sessions (multi-session UI)
+  'Choose a model': '选择模型',
+  'New session': '新会话',
+  'Restart': '重启',
+  'Restarting with the new model — your conversation history is preserved.': '正在使用新模型重启——您的对话记录已保留。',
+  'Running': '运行中',
+  'Session {n}': '会话 {n}',
+  'Sessions': '会话',
+  'Stopped': '已停止',
+  'This permanently deletes its memory and cannot be undone. To just switch models, use the model dropdown instead — it restarts without losing history.': '这将永久删除其记忆，且无法撤销。如果只是想切换模型，请改用模型下拉菜单——它会在不丢失历史记录的情况下重启。',
+  'This session’s container stopped. Its memory is preserved — restart to continue.': '此会话的容器已停止。记忆已保留——重启即可继续。',
 }
