@@ -9,6 +9,7 @@ export interface Claw {
   container_name?: string;
   error_message?: string;
   expires_at?: string | null;
+  claw_model_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -60,6 +61,12 @@ export async function createClaw(): Promise<Claw> {
 
 export async function deleteClaw(): Promise<void> {
   await apiClient.delete<ApiResponse<Record<string, never>>>('/claw');
+}
+
+/** Point this user's Claw at a different registered model. null resets to the default. */
+export async function updateClawModel(modelId: string | null): Promise<Claw> {
+  const response = await apiClient.patch<ApiResponse<Claw>>('/claw/model', { model_id: modelId });
+  return response.data.data;
 }
 
 export async function getClawApiKey(): Promise<string> {

@@ -18,6 +18,11 @@
               >{{ formattedCountdown }}</span>
             </div>
             <div class="flex items-center gap-2 flex-shrink-0">
+              <ModelSelectorDropdown
+                v-if="clawModelId !== undefined"
+                :model-id="clawModelId"
+                @update:model-id="handleClawModelChange"
+              />
               <button
                 @click="handleDeleteClaw"
                 class="h-8 px-3 rounded-[100px] inline-flex items-center gap-1 clickable outline outline-1 outline-offset-[-1px] outline-[var(--border-btn-main)] hover:bg-[var(--fill-tsp-white-light)] text-[var(--text-secondary)] text-sm font-medium"
@@ -159,10 +164,11 @@ import openclawColorImage from '../assets/openclaw-color.png';
 import { useFilePreviewer } from '../composables/useFilePreviewer';
 import { useDialog } from '../composables/useDialog';
 import {
-  getClaw, createClaw, deleteClaw,
+  getClaw, createClaw, deleteClaw, updateClawModel,
   getClawHistory, ClawWebSocket,
   type Claw, type ClawStatus, type ClawEvent,
 } from '../api/claw';
+import ModelSelectorDropdown from '../components/ModelSelectorDropdown.vue';
 import { Message, MessageContent, AttachmentsContent, isConsecutiveAssistant } from '../types/message';
 import type { FileInfo } from '../api/file';
 import { showErrorToast } from '../utils/toast';
@@ -384,6 +390,22 @@ const handleWSEvent = (chunk: ClawEvent) => {
 // ------------------------------------------------------------------
 
 const hasClaw = computed(() => clawData.value !== null);
+// undefined while there's no claw yet (dropdown hidden); null means "using
+// the default model" once a claw exists — both are valid, distinct states.
+const clawModelId = computed(() => clawData.value?.claw_model_id ?? (hasClaw.value ? null : undefined));
+
+const handleClawModelChange = async (modelId: string) => {
+  if (!clawData.value) return;
+  const previous = clawData.value.claw_model_id ?? null;
+  clawData.value = { ...clawData.value, claw_model_id: modelId }; // optimistic
+  try {
+    const updated = await updateClawModel(modelId);
+    clawData.value = updated;
+  } catch (err: any) {
+    clawData.value = { ...clawData.value, claw_model_id: previous };
+    showErrorToast(err?.response?.data?.msg || err?.message || t('Failed to update model'));
+  }
+};
 
 const messageKey = (msg: Message, index: number): string => {
   if (msg.type === 'attachments') {

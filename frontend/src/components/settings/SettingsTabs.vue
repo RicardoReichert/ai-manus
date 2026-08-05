@@ -10,6 +10,7 @@ import {
   Search,
   ChevronsUpDown,
   ArrowUpRight,
+  BrainCog,
 } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
 import { useSettingsDialog } from '@/composables/useSettingsDialog'
@@ -19,6 +20,7 @@ export type SettingsTabId =
   | 'account'
   | 'shortcuts'
   | 'personalization'
+  | 'models'
   | 'help'
 
 export interface SettingsNavItem {
@@ -47,27 +49,39 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const { currentUser } = useAuth()
+const { currentUser, isAdmin } = useAuth()
 const { isSettingsDialogOpen } = useSettingsDialog()
 
-const navGroups: SettingsNavGroup[] = [
-  {
-    id: 'settings',
-    label: 'Settings',
-    items: [
-      { id: 'general', label: 'General', icon: Settings2 },
-      { id: 'account', label: 'Account', icon: UserRound },
-      { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
-    ],
-  },
-  {
-    id: 'features',
-    label: 'Features',
-    items: [
-      { id: 'personalization', label: 'Personalization', icon: LayoutGrid },
-    ],
-  },
-]
+const navGroups = computed<SettingsNavGroup[]>(() => {
+  const groups: SettingsNavGroup[] = [
+    {
+      id: 'settings',
+      label: 'Settings',
+      items: [
+        { id: 'general', label: 'General', icon: Settings2 },
+        { id: 'account', label: 'Account', icon: UserRound },
+        { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
+      ],
+    },
+    {
+      id: 'features',
+      label: 'Features',
+      items: [
+        { id: 'personalization', label: 'Personalization', icon: LayoutGrid },
+      ],
+    },
+  ]
+  if (isAdmin.value) {
+    groups.push({
+      id: 'admin',
+      label: 'Admin',
+      items: [
+        { id: 'models', label: 'Models', icon: BrainCog },
+      ],
+    })
+  }
+  return groups
+})
 
 const helpItem: SettingsNavItem = {
   id: 'help',
@@ -102,8 +116,8 @@ const avatarLetter = computed(() =>
 
 const filteredGroups = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return navGroups
-  return navGroups
+  if (!q) return navGroups.value
+  return navGroups.value
     .map((group) => ({
       ...group,
       items: group.items.filter((item) =>
@@ -122,7 +136,7 @@ const showHelp = computed(() => {
 })
 
 const activeTitle = computed(() => {
-  const all = [...navGroups.flatMap((g) => g.items), helpItem]
+  const all = [...navGroups.value.flatMap((g) => g.items), helpItem]
   const current = all.find((item) => item.id === activeTab.value)
   return current ? t(current.label) : ''
 })

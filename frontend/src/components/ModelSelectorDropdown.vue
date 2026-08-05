@@ -76,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronDown, Check } from 'lucide-vue-next'
 import type { ModelDescriptor } from '../api/model'
@@ -85,6 +85,13 @@ import { useActiveModel } from '../composables/useActiveModel'
 const props = defineProps<{
   sessionId?: string
   taskMode?: 'agent' | 'chat'
+  /**
+   * Controlled selection, e.g. Claw's per-instance model. When set, the
+   * dropdown displays/selects this id instead of the shared chat selection
+   * (useActiveModel's singleton) — the two pickers must not overwrite each
+   * other's state.
+   */
+  modelId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -93,7 +100,21 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const { availableModels, selectedModelId, activeModelName, isLocalModel, ensureModelsLoaded } = useActiveModel()
+const isControlled = props.modelId !== undefined
+const {
+  availableModels,
+  selectedModelId: sharedSelectedModelId,
+  activeModelName: sharedActiveModelName,
+  isLocalModel: sharedIsLocalModel,
+  ensureModelsLoaded,
+} = useActiveModel()
+
+const selectedModelId = computed(() => (isControlled ? props.modelId : sharedSelectedModelId.value))
+const activeModel = computed<ModelDescriptor | undefined>(() =>
+  isControlled ? availableModels.value.find((m) => m.id === props.modelId) : undefined,
+)
+const activeModelName = computed(() => (isControlled ? activeModel.value?.name : sharedActiveModelName.value))
+const isLocalModel = computed(() => (isControlled ? (activeModel.value?.is_local ?? false) : sharedIsLocalModel.value))
 
 const showMenu = ref(false)
 const menuRef = ref<HTMLElement | null>(null)
