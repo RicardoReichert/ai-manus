@@ -5,12 +5,8 @@
       <!-- Header -->
       <div class="w-[calc(100%+40px)] -mx-5 bg-[var(--background-gray-main)] sticky top-0 z-10 ps-[14px] pe-[20px] py-[12px] border-b border-transparent">
         <div class="flex justify-between items-center w-full">
-          <div class="relative z-20 overflow-hidden items-center flex-shrink-0 flex">
-            <div class="flex items-center">
-              <div class="flex h-8 pt-[7px] md:pr-[6px] pr-[4px] pb-[7px] md:pl-[8px] pl-[6px] justify-center items-center gap-1 rounded-[8px]">
-                <span class="text-[var(--text-primary)] md:text-[18px] text-[16px] font-[500] md:leading-[22px] leading-[20px] truncate">Manus</span>
-              </div>
-            </div>
+          <div class="relative z-20 items-center flex-shrink-0 flex">
+            <ModelSelectorDropdown @update:modelId="setSelectedModel" />
           </div>
           <div class="flex items-center gap-2">
             <a v-if="showGithubButton"
@@ -80,6 +76,7 @@ import SimpleBar from '../components/SimpleBar.vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import ChatBox from '../components/ChatBox.vue';
+import ModelSelectorDropdown from '../components/ModelSelectorDropdown.vue';
 import { createSession } from '../api/agent';
 import { showErrorToast } from '../utils/toast';
 import {
@@ -90,6 +87,7 @@ import type { FileInfo } from '../api/file';
 import { useFilePreviewer } from '../composables/useFilePreviewer';
 import { useAuth } from '../composables/useAuth';
 import { getCachedClientConfig } from '../api/config';
+import { useActiveModel } from '../composables/useActiveModel';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -101,6 +99,7 @@ const { currentUser } = useAuth();
 const showGithubButton = ref(false);
 const githubRepositoryUrl = ref('https://github.com/simpleyyt/ai-manus');
 const chatBoxRef = ref<InstanceType<typeof ChatBox> | null>(null);
+const { selectedModelId, ensureModelsLoaded, setSelectedModel } = useActiveModel();
 
 const serifFontFamily = 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif';
 
@@ -138,6 +137,7 @@ const handleChipClick = (chip: SuggestionChip) => {
 
 onMounted(async () => {
   hideFilePreviewer();
+  ensureModelsLoaded();
   const clientConfig = await getCachedClientConfig();
   if (clientConfig) {
     showGithubButton.value = clientConfig.show_github_button;
@@ -150,7 +150,7 @@ const handleSubmit = async () => {
     isSubmitting.value = true;
 
     try {
-      const session = await createSession();
+      const session = await createSession(undefined, undefined, selectedModelId.value || undefined);
       const sessionId = session.session_id;
 
       router.push({

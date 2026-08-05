@@ -372,6 +372,7 @@ export default {
   'Select language': '选择语言',
   'Simplified Chinese': '简体中文',
   'English': '英文',
+  'Portuguese (Brazil)': '葡萄牙语（巴西）',
   // MCP Tool View
   'Tool': '工具',
   'Arguments': '参数',
@@ -441,4 +442,21 @@ export default {
   'Please check {count} attachment(s) I sent': '（请查看我发送的 {count} 个附件）',
   'WebSocket not connected, please try again later': 'WebSocket 未连接，请稍后重试',
   'Claw has expired, please recreate.': 'Claw 已过期，请重新创建。',
+
+  // Model switcher, task logs drawer, action logs
+  'Available Models': '可用模型',
+  'Task Execution Logs': '任务执行日志',
+  'Task Logs & Context': '任务日志与上下文',
+  'Model & Execution Environment': '模型与执行环境',
+  'Active Model': '当前模型',
+  'Task Mode': '任务模式',
+  'Execution Timeline': '执行时间线',
+  'No execution logs recorded yet.': '暂无执行日志记录。',
+  'Workspace Files': '工作区文件',
+  'No files generated in this task.': '此任务未生成任何文件。',
+  'Local': '本地',
+  'Applies to your next message': '将在下一条消息中生效',
+  'Failed to switch model': '切换模型失败',
+  'Copy parameters': '复制参数',
+  'Loading files…': '正在加载文件…',
 } 

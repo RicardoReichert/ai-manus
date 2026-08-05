@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import AsyncGenerator, List
 from app.domain.models.plan import Plan, Step, ExecutionStatus
 from app.domain.models.file import FileInfo
@@ -75,11 +76,13 @@ class ExecutionAgent(BaseAgent):
             language=plan.language
         )
         step.status = ExecutionStatus.RUNNING
+        step.started_at = datetime.now(timezone.utc)
         yield StepEvent(status=StepStatus.STARTED, step=step)
         async for event in self.execute(request, output_tool=COMPLETE_STEP_TOOL):
             if isinstance(event, ErrorEvent):
                 step.status = ExecutionStatus.FAILED
                 step.error = event.error
+                step.finished_at = datetime.now(timezone.utc)
                 yield StepEvent(status=StepStatus.FAILED, step=step)
             elif isinstance(event, StructuredOutputEvent):
                 report: StepReport = event.output
@@ -87,6 +90,7 @@ class ExecutionAgent(BaseAgent):
                 step.success = report.success
                 step.result = report.result
                 step.attachments = report.attachments
+                step.finished_at = datetime.now(timezone.utc)
                 yield StepEvent(status=StepStatus.COMPLETED, step=step)
                 if step.result:
                     yield MessageEvent(message=step.result)
@@ -105,6 +109,8 @@ class ExecutionAgent(BaseAgent):
                     continue
             yield event
         step.status = ExecutionStatus.COMPLETED
+        if step.finished_at is None:
+            step.finished_at = datetime.now(timezone.utc)
 
     async def summarize(self) -> AsyncGenerator[BaseEvent, None]:
         async for event in self.execute(SUMMARIZE_PROMPT, output_tool=DELIVER_RESULT_TOOL):

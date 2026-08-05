@@ -1,0 +1,47 @@
+{
+  "models": [
+    {
+      "id": "gemini-2.5-flash",
+      "name": "Gemini 2.5 Flash",
+      "provider": "google_genai",
+      "model": "gemini-2.5-flash",
+      "api_key_env": "GEMINI_API_KEY",
+      "description": "Fast reasoning model from Google Gemini"
+    },
+    {
+      "id": "gpt-4o",
+      "name": "GPT-4o",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "api_key_env": "OPENAI_API_KEY",
+      "description": "OpenAI GPT-4o"
+    },
+    {
+      "id": "deepseek-chat",
+      "name": "DeepSeek V3",
+      "provider": "openai",
+      "model": "deepseek-chat",
+      "base_url": "https://api.deepseek.com/v1",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "description": "DeepSeek V3 via its OpenAI-compatible endpoint"
+    },
+    {
+      "id": "openrouter-claude",
+      "name": "Claude (via OpenRouter)",
+      "provider": "openai",
+      "model": "anthropic/claude-sonnet-4.5",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "description": "Routed through OpenRouter"
+    },
+    {
+      "id": "lmstudio-local",
+      "name": "LM Studio (local)",
+      "provider": "openai",
+      "model": "REPLACE_WITH_YOUR_LOADED_MODEL_ID",
+      "base_url": "http://host.docker.internal:1234/v1",
+      "is_local": true,
+      "description": "Local server running via LM Studio. Set \"model\" to the id shown in LM Studio's own model list."
+    }
+  ]
+}

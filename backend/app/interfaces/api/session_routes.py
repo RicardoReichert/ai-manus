@@ -8,13 +8,14 @@ from app.application.errors.exceptions import NotFoundError, UnauthorizedError, 
 from app.interfaces.dependencies import get_agent_service, get_current_user, get_optional_current_user
 from app.interfaces.schemas.base import APIResponse
 from app.interfaces.schemas.session import (
-    ShellViewRequest, CreateSessionResponse, GetSessionResponse,
+    ShellViewRequest, CreateSessionRequest, CreateSessionResponse, GetSessionResponse,
     ListSessionItem, ListSessionResponse, ShellViewResponse,
     ShareSessionResponse, SharedSessionResponse,
     UpdateSessionTitleRequest, UpdateSessionTitleResponse,
     FavoriteSessionResponse, PinSessionRequest, PinSessionResponse,
     MoveSessionProjectRequest, MoveSessionProjectResponse,
     UpdateSessionTaskModeRequest, UpdateSessionTaskModeResponse,
+    UpdateSessionModelRequest, UpdateSessionModelResponse,
     LibraryFileItem, LibraryResponse,
 )
 from app.interfaces.schemas.file import FileViewRequest, FileViewResponse
@@ -29,10 +30,18 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 @router.put("", response_model=APIResponse[CreateSessionResponse])
 async def create_session(
+    body: Optional[CreateSessionRequest] = None,
     current_user: User = Depends(get_current_user),
     agent_service: AgentService = Depends(get_agent_service)
 ) -> APIResponse[CreateSessionResponse]:
-    session = await agent_service.create_session(current_user.id)
+    req = body or CreateSessionRequest()
+    session = await agent_service.create_session(
+        user_id=current_user.id,
+        project_id=req.project_id,
+        task_mode=req.task_mode,
+        model_name=req.model_name,
+        model_provider=req.model_provider,
+    )
     return APIResponse.success(
         CreateSessionResponse(
             session_id=session.id,
@@ -58,6 +67,8 @@ async def get_session(
         is_pinned=session.is_pinned,
         project_id=session.project_id,
         task_mode=session.task_mode,
+        model_name=session.model_name,
+        model_provider=session.model_provider,
     ))
 
 @router.delete("/{session_id}", response_model=APIResponse[None])
@@ -140,6 +151,22 @@ async def update_session_task_mode(
     return APIResponse.success(UpdateSessionTaskModeResponse(
         session_id=session_id,
         task_mode=request.task_mode,
+    ))
+
+@router.patch("/{session_id}/model", response_model=APIResponse[UpdateSessionModelResponse])
+async def update_session_model(
+    session_id: str,
+    request: UpdateSessionModelRequest,
+    current_user: User = Depends(get_current_user),
+    agent_service: AgentService = Depends(get_agent_service),
+) -> APIResponse[UpdateSessionModelResponse]:
+    desc = await agent_service.update_session_model(
+        session_id, current_user.id, request.model_name, request.model_provider
+    )
+    return APIResponse.success(UpdateSessionModelResponse(
+        session_id=session_id,
+        model_name=desc.id,
+        model_provider=desc.provider,
     ))
 
 @router.post("/{session_id}/stop", response_model=APIResponse[None])

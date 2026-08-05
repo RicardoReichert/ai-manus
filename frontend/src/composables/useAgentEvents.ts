@@ -15,6 +15,7 @@ import {
   PlanEventData,
   AgentEvent,
 } from '../types/event';
+import type { TaskLogEntry, TaskLogKind } from '../types/taskLog';
 
 export interface AgentEventState {
   messages: Ref<Message[]>;
@@ -23,7 +24,11 @@ export interface AgentEventState {
   lastEventId: Ref<string | undefined>;
   lastTool: Ref<ToolContent | undefined>;
   lastNoMessageTool: Ref<ToolContent | undefined>;
+  /** Optional: raw event log for the Task Logs drawer. Capped, newest last. */
+  logs?: Ref<TaskLogEntry[]>;
 }
+
+const MAX_LOG_ENTRIES = 200;
 
 export interface AgentEventOptions {
   /** Called when a non-message tool is created or updated, so the page can surface it (e.g. in the tool panel). */
@@ -37,7 +42,7 @@ export interface AgentEventOptions {
  * Used by both ChatPage (live chat) and SharePage (replay).
  */
 export function useAgentEvents(state: AgentEventState, options: AgentEventOptions = {}) {
-  const { messages, title, plan, lastEventId, lastTool, lastNoMessageTool } = state;
+  const { messages, title, plan, lastEventId, lastTool, lastNoMessageTool, logs } = state;
 
   const getLastStep = (): StepContent | undefined => {
     return messages.value.filter(message => message.type === 'step').pop()?.content as StepContent;
@@ -149,8 +154,45 @@ export function useAgentEvents(state: AgentEventState, options: AgentEventOption
     plan.value = planData;
   };
 
+  const logLabel = (event: AgentEvent): { label: string; detail?: string } => {
+    switch (event.event) {
+      case 'message': {
+        const d = event.data as MessageEventData;
+        return { label: d.role === 'user' ? 'User message' : 'Assistant message', detail: d.content };
+      }
+      case 'tool': {
+        const d = event.data as ToolEventData;
+        return { label: d.function || d.name, detail: JSON.stringify(d.args) };
+      }
+      case 'step': {
+        const d = event.data as StepEventData;
+        return { label: d.description, detail: d.status };
+      }
+      case 'plan': {
+        const d = event.data as PlanEventData;
+        return { label: `Plan updated (${d.steps.length} steps)` };
+      }
+      case 'error': {
+        const d = event.data as ErrorEventData;
+        return { label: 'Error', detail: d.error };
+      }
+      case 'title': {
+        const d = event.data as TitleEventData;
+        return { label: 'Title set', detail: d.title };
+      }
+      case 'wait':
+        return { label: 'Waiting for input' };
+      case 'done':
+        return { label: 'Task finished' };
+      default:
+        return { label: event.event };
+    }
+  };
+
   const handleEvent = (event: AgentEvent) => {
     // Control / live computer-panel events — not part of the chat message list
+    // or the log stream: terminal_update in particular fires far too often to
+    // keep in a capped buffer.
     if (
       event.event === 'status_update'
       || event.event === 'terminal_update'
@@ -175,6 +217,22 @@ export function useAgentEvents(state: AgentEventState, options: AgentEventOption
     } else if (event.event === 'plan') {
       handlePlanEvent(event.data as PlanEventData);
     }
+
+    if (logs) {
+      const { label, detail } = logLabel(event);
+      const entry: TaskLogEntry = {
+        id: event.data.event_id,
+        kind: event.event as TaskLogKind,
+        label,
+        detail,
+        timestamp: event.data.timestamp,
+      };
+      logs.value.push(entry);
+      if (logs.value.length > MAX_LOG_ENTRIES) {
+        logs.value.splice(0, logs.value.length - MAX_LOG_ENTRIES);
+      }
+    }
+
     lastEventId.value = event.data.event_id;
   };
 

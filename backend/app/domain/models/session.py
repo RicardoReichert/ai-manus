@@ -36,6 +36,8 @@ class SessionSummary(BaseModel):
     is_pinned: bool = False
     project_id: Optional[str] = None
     task_mode: TaskMode = TaskMode.AGENT
+    model_name: Optional[str] = None
+    model_provider: Optional[str] = None
 
 
 class Session(BaseModel):
@@ -59,6 +61,8 @@ class Session(BaseModel):
     is_pinned: bool = False
     project_id: Optional[str] = None
     task_mode: TaskMode = TaskMode.AGENT
+    model_name: Optional[str] = None
+    model_provider: Optional[str] = None
 
     def get_last_plan(self) -> Optional[Plan]:
         """Get the last plan from the events"""

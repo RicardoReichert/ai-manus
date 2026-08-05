@@ -15,8 +15,19 @@ export type ChatStreamCallbacks = {
  * Create Session
  * @returns Session
  */
-export async function createSession(): Promise<CreateSessionResponse> {
-  const response = await apiClient.put<ApiResponse<CreateSessionResponse>>('/sessions');
+export async function createSession(
+  projectId?: string,
+  taskMode?: 'agent' | 'chat',
+  modelName?: string,
+  modelProvider?: string
+): Promise<CreateSessionResponse> {
+  const body = (projectId || taskMode || modelName || modelProvider) ? {
+    project_id: projectId,
+    task_mode: taskMode,
+    model_name: modelName,
+    model_provider: modelProvider,
+  } : undefined;
+  const response = await apiClient.put<ApiResponse<CreateSessionResponse>>('/sessions', body);
   return response.data.data;
 }
 
@@ -115,6 +126,18 @@ export async function updateSessionTaskMode(
   const response = await apiClient.patch<ApiResponse<{ session_id: string; task_mode: 'agent' | 'chat' }>>(
     `/sessions/${sessionId}/mode`,
     { task_mode: taskMode },
+  );
+  return response.data.data;
+}
+
+export async function updateSessionModel(
+  sessionId: string,
+  modelName: string,
+  modelProvider?: string
+): Promise<{ session_id: string; model_name: string; model_provider?: string }> {
+  const response = await apiClient.patch<ApiResponse<{ session_id: string; model_name: string; model_provider?: string }>>(
+    `/sessions/${sessionId}/model`,
+    { model_name: modelName, model_provider: modelProvider }
   );
   return response.data.data;
 }

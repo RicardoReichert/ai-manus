@@ -373,6 +373,7 @@ export default {
   'Select language': 'Select language',
   'Simplified Chinese': 'Simplified Chinese',
   'English': 'English',
+  'Portuguese (Brazil)': 'Portuguese (Brazil)',
   // MCP Tool View
   'Tool': 'Tool',
   'Arguments': 'Arguments',
@@ -442,4 +443,21 @@ export default {
   'Please check {count} attachment(s) I sent': 'Please check {count} attachment(s) I sent',
   'WebSocket not connected, please try again later': 'WebSocket not connected, please try again later',
   'Claw has expired, please recreate.': 'Claw has expired, please recreate.',
+
+  // Model switcher, task logs drawer, action logs
+  'Available Models': 'Available Models',
+  'Task Execution Logs': 'Task Execution Logs',
+  'Task Logs & Context': 'Task Logs & Context',
+  'Model & Execution Environment': 'Model & Execution Environment',
+  'Active Model': 'Active Model',
+  'Task Mode': 'Task Mode',
+  'Execution Timeline': 'Execution Timeline',
+  'No execution logs recorded yet.': 'No execution logs recorded yet.',
+  'Workspace Files': 'Workspace Files',
+  'No files generated in this task.': 'No files generated in this task.',
+  'Local': 'Local',
+  'Applies to your next message': 'Applies to your next message',
+  'Failed to switch model': 'Failed to switch model',
+  'Copy parameters': 'Copy parameters',
+  'Loading files…': 'Loading files…',
 } 

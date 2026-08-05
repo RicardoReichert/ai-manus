@@ -31,26 +31,14 @@
   </div>
   <!-- Official ChatReplyLayout: gap-2 w-full group mt-3 + header h-[26px] + Logo/ProductName/Lite -->
   <div v-else-if="message.type === 'assistant'" class="flex flex-col gap-2 w-full group" :class="hideAssistantHeader ? 'mt-0' : 'mt-3'">
-    <div v-if="!hideAssistantHeader" class="flex items-center justify-between h-[26px] group">
-      <div class="flex items-center gap-[8px] -ms-[2px] max-w-full">
-        <component v-if="assistantIcon" :is="assistantIcon" :size="24" class="w-6 h-6" />
-        <Bot v-else :size="24" class="w-6 h-6" />
-        <span v-if="assistantName" class="text-base text-[var(--text-primary)] tracking-tight leading-none">{{ assistantName }}</span>
-        <template v-else-if="!assistantIcon">
-          <ManusTextIcon />
-        </template>
-        <span
-          v-if="showLiteBadge"
-          class="text-[var(--text-tertiary)] text-xs flex h-5 py-0.5 px-1.5 items-center gap-1 rounded-[6px] border border-[var(--border-dark)] flex-shrink-0 ml-[3px]">
-          Lite
-        </span>
-      </div>
-      <div class="flex items-center gap-[2px] invisible group-hover:visible">
-        <div class="float-right transition text-[12px] text-[var(--text-tertiary)]">
-          {{ relativeTime(message.content.timestamp) }}
-        </div>
-      </div>
-    </div>
+    <ChatMessageHeader
+      v-if="!hideAssistantHeader"
+      :assistantIcon="assistantIcon"
+      :assistantName="assistantName"
+      :showLiteBadge="showLiteBadge"
+      :modelName="modelName"
+      :timestamp="message.content.timestamp"
+    />
     <div
       class="limited-markdown-content w-full text-[var(--text-primary)] u-break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 prose prose-sm sm:prose-base dark:prose-invert max-w-none p-0 m-0 [&_pre:not(.shiki)]:!bg-[var(--fill-tsp-white-light)] [&_pre:not(.shiki)]:text-[var(--text-primary)]"
       v-html="renderMarkdown(messageContent.content)"></div>
@@ -105,33 +93,20 @@
     </div>
   </div>
   <div v-else-if="message.type === 'attachments' && attachmentsContent.role === 'assistant'" class="flex flex-col gap-2 w-full group" :class="hideAssistantHeader ? 'mt-0' : 'mt-3'">
-    <div v-if="!hideAssistantHeader" class="flex items-center justify-between h-[26px] group">
-      <div class="flex items-center gap-[8px] -ms-[2px] max-w-full">
-        <component v-if="assistantIcon" :is="assistantIcon" :size="24" class="w-6 h-6" />
-        <Bot v-else :size="24" class="w-6 h-6" />
-        <span v-if="assistantName" class="text-base text-[var(--text-primary)] tracking-tight leading-none">{{ assistantName }}</span>
-        <template v-else-if="!assistantIcon">
-          <ManusTextIcon />
-        </template>
-        <span
-          v-if="showLiteBadge"
-          class="text-[var(--text-tertiary)] text-xs flex h-5 py-0.5 px-1.5 items-center gap-1 rounded-[6px] border border-[var(--border-dark)] flex-shrink-0 ml-[3px]">
-          Lite
-        </span>
-      </div>
-      <div class="flex items-center gap-[2px] invisible group-hover:visible">
-        <div class="float-right transition text-[12px] text-[var(--text-tertiary)]">
-          {{ relativeTime(attachmentsContent.timestamp) }}
-        </div>
-      </div>
-    </div>
+    <ChatMessageHeader
+      v-if="!hideAssistantHeader"
+      :assistantIcon="assistantIcon"
+      :assistantName="assistantName"
+      :showLiteBadge="showLiteBadge"
+      :modelName="modelName"
+      :timestamp="attachmentsContent.timestamp"
+    />
     <AttachmentsMessage :content="attachmentsContent" :hideAllFilesButton="hideAllFilesButton"/>
   </div>
   <AttachmentsMessage v-else-if="message.type === 'attachments'" :content="attachmentsContent" :hideAllFilesButton="hideAllFilesButton"/>
 </template>
 
 <script setup lang="ts">
-import ManusTextIcon from './icons/ManusTextIcon.vue';
 import { Message, MessageContent, AttachmentsContent } from '../types/message';
 import ToolUse from './ToolUse.vue';
 import { marked } from 'marked';
@@ -140,10 +115,10 @@ import { CheckIcon } from 'lucide-vue-next';
 import { computed, ref, type Component } from 'vue';
 import { ToolContent, StepContent } from '../types/message';
 import { useRelativeTime } from '../composables/useTime';
-import { Bot } from 'lucide-vue-next';
 import AttachmentsMessage from './AttachmentsMessage.vue';
 import ChatMessageCopyButton from './ChatMessageCopyButton.vue';
 import ChatAttachmentList from './ChatAttachmentList.vue';
+import ChatMessageHeader from './ChatMessageHeader.vue';
 
 
 const props = defineProps<{
@@ -155,6 +130,8 @@ const props = defineProps<{
   hideHeader?: boolean;
   /** Official ChatReplyLayout Lite badge (qualityMode === lite / chat) */
   showLiteBadge?: boolean;
+  /** Currently selected model for this session; shown as a chip in the header. */
+  modelName?: string;
   /** Official ChatReplyActions: show Copy under this assistant reply */
   showCopyActions?: boolean;
   /** Official: pb-2 when last reply before a user message */

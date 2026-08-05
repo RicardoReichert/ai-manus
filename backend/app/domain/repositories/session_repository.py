@@ -95,7 +95,13 @@ class SessionRepository(Protocol):
     async def update_task_mode(self, session_id: str, task_mode: str) -> None:
         """Update session task mode (agent | chat)"""
         ...
-    
+
+    async def update_model(
+        self, session_id: str, model_name: Optional[str], model_provider: Optional[str] = None
+    ) -> None:
+        """Update the session's selected model id and provider"""
+        ...
+
     async def delete(self, session_id: str) -> None:
         """Delete a session"""
         ...

@@ -119,6 +119,7 @@ coverage/
 .vite/
 docker-compose-test.yml
 mcp.json
+models.json
 
 # Frontend whitelist
 !frontend/src/lib/

@@ -5,8 +5,21 @@ from typing import Any, AsyncGenerator, Optional, Tuple
 import logging
 from app.infrastructure.storage.redis import get_redis
 from app.domain.external.message_queue import MessageQueue
+import re
 
 logger = logging.getLogger(__name__)
+
+REDIS_STREAM_ID_PATTERN = re.compile(r"^(\d+-\d+|\d+|\$|\+|-)$")
+
+
+def _sanitize_stream_id(start_id: Optional[str], default: str = "0") -> str:
+    if not start_id:
+        return default
+    start_id_str = str(start_id).strip()
+    if REDIS_STREAM_ID_PATTERN.match(start_id_str):
+        return start_id_str
+    return default
+
 
 class RedisStreamQueue(MessageQueue):
     """Redis Stream implementation of message queue"""
@@ -96,10 +109,8 @@ class RedisStreamQueue(MessageQueue):
         Returns:
             Tuple[str, Any]: (Message ID, Message content), returns (None, None) if no message
         """
+        start_id = _sanitize_stream_id(start_id, "0")
         logger.debug(f"Getting message from stream ({self._stream_name}): {start_id}")
-        # Handle None start_id by using "0" (read from beginning)
-        if start_id is None:
-            start_id = "0"
             
         # Read new messages
         messages = await self._redis.client.xread(
@@ -135,6 +146,8 @@ class RedisStreamQueue(MessageQueue):
         Yields:
             Tuple[str, Any]: (Message ID, Message content)
         """
+        start_id = _sanitize_stream_id(start_id, "-")
+        end_id = _sanitize_stream_id(end_id, "+")
         messages = await self._redis.client.xrange(self._stream_name, start_id, end_id, count=count)
         
         if not messages:

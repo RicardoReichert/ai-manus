@@ -123,6 +123,8 @@ class SessionDocument(BaseDocument[Session], id_field="session_id", domain_model
     is_pinned: Optional[bool] = False
     project_id: Optional[str] = None
     task_mode: Optional[TaskMode] = TaskMode.AGENT
+    model_name: Optional[str] = None
+    model_provider: Optional[str] = None
     class Settings:
         name = "sessions"
         indexes = [

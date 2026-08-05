@@ -6,42 +6,13 @@
       <div ref="observerRef"
         class="flex h-[56px] w-full shrink-0 items-center justify-between py-[12px] md:px-[24px] ps-[16px] pe-[20px] md:ps-[16px] md:pe-[20px] gap-1 border-b sticky top-0 z-10 flex-shrink-0 [-webkit-app-region:drag] bg-[var(--background-gray-main)] border-[var(--border-main)]">
         <div class="flex min-w-0 flex-1 items-center gap-1">
-          <div class="flex items-center pointer-events-auto overflow-hidden relative" ref="modeMenuRef">
-            <button
-              type="button"
-              class="flex h-8 pt-[7px] md:pr-[6px] pr-[4px] pb-[7px] md:pl-[8px] pl-[6px] justify-center items-center gap-1 rounded-[8px] clickable hover:bg-[var(--fill-tsp-white-light)]"
-              :aria-expanded="showModeMenu"
-              aria-haspopup="menu"
-              @click="showModeMenu = !showModeMenu">
-              <span class="text-[var(--text-primary)] md:text-[18px] text-[16px] font-[500] md:leading-[22px] leading-[20px] truncate">Manus</span>
-              <span
-                v-if="taskMode === 'chat'"
-                class="text-[var(--text-tertiary)] text-xs flex h-5 py-0.5 px-1.5 items-center rounded-[6px] border border-[var(--border-dark)] flex-shrink-0">
-                Lite
-              </span>
-              <ChevronDown class="size-3.5 text-[var(--icon-tertiary)] shrink-0" :size="14" />
-            </button>
-            <div
-              v-if="showModeMenu"
-              role="menu"
-              class="absolute top-[calc(100%+6px)] left-0 z-50 min-w-[180px] rounded-[12px] border border-[var(--border-light)] bg-[var(--background-menu-white)] shadow-[0px_8px_32px_0px_var(--shadow-S)] p-1">
-              <button
-                type="button"
-                role="menuitem"
-                class="flex w-full items-center justify-between gap-2 px-3 py-2 rounded-[8px] text-sm text-[var(--text-primary)] hover:bg-[var(--fill-tsp-white-main)]"
-                @click="setTaskMode('agent')">
-                <span>{{ t('Agent') }}</span>
-                <Check v-if="taskMode === 'agent'" :size="16" class="text-[var(--icon-primary)]" />
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                class="flex w-full items-center justify-between gap-2 px-3 py-2 rounded-[8px] text-sm text-[var(--text-primary)] hover:bg-[var(--fill-tsp-white-main)]"
-                @click="setTaskMode('chat')">
-                <span>{{ t('Chat') }} · Lite</span>
-                <Check v-if="taskMode === 'chat'" :size="16" class="text-[var(--icon-primary)]" />
-              </button>
-            </div>
+          <div class="relative z-20 items-center flex-shrink-0 flex">
+            <ModelSelectorDropdown
+              :sessionId="sessionId"
+              :taskMode="taskMode"
+              @update:modelId="handleModelChange"
+              @update:taskMode="setTaskMode"
+            />
           </div>
           <div class="flex-1 min-w-[16px]"></div>
         </div>
@@ -126,6 +97,20 @@
             </PopoverContent>
           </Popover>
 
+          <!-- Task Logs Drawer Button -->
+          <button type="button" @click="showTaskLogsDrawer = true"
+            class="flex items-center justify-center cursor-pointer rounded-md hover:bg-[var(--fill-tsp-white-light)] size-8 text-[var(--icon-secondary)]"
+            :title="t('Task Logs & Context')">
+            <FileText class="size-[18px]" :size="18" />
+          </button>
+
+          <!-- Library Shortcut Button -->
+          <button type="button" @click="router.push('/library')"
+            class="flex items-center justify-center cursor-pointer rounded-md hover:bg-[var(--fill-tsp-white-light)] size-8 text-[var(--icon-secondary)]"
+            :title="t('Library')">
+            <Bookmark class="size-[18px]" :size="18" />
+          </button>
+
           <button type="button" @click="handleFileListShow"
             class="flex items-center justify-center cursor-pointer rounded-md hover:bg-[var(--fill-tsp-white-light)] size-8"
             :title="t('View all files in this task')">
@@ -152,6 +137,7 @@
           <ChatMessage v-for="(message, index) in messages" :key="index" :message="message"
             :hideHeader="isConsecutiveAssistant(messages, index)"
             :showLiteBadge="taskMode === 'chat'"
+            :modelName="activeModelName"
             :showCopyActions="shouldShowAssistantCopyActions(index)"
             :isLastBeforeUser="isAssistantLastBeforeUser(index)"
             @toolClick="handleToolClick" />
@@ -185,6 +171,13 @@
       @jumpToRealTime="jumpToRealTime"
       @selectTool="handleSelectTool"
       @useComputer="handleTakeControl" />
+    <TaskLogsDrawer
+      :open="showTaskLogsDrawer"
+      :sessionId="sessionId"
+      :taskMode="taskMode"
+      :logs="logs"
+      @close="showTaskLogsDrawer = false"
+    />
   </SimpleBar>
 </template>
 
@@ -198,13 +191,17 @@ import ChatMessage from '../components/ChatMessage.vue';
 import ChatTaskCompleted from '../components/ChatTaskCompleted.vue';
 import ChatWaitingContinue from '../components/ChatWaitingContinue.vue';
 import TakeControlBanner from '../components/TakeControlBanner.vue';
+import TaskLogsDrawer from '../components/TaskLogsDrawer.vue';
+import ModelSelectorDropdown from '../components/ModelSelectorDropdown.vue';
+import { useActiveModel } from '../composables/useActiveModel';
 import * as agentApi from '../api/agent';
 import { Message, MessageContent, ToolContent, StepContent, isConsecutiveAssistant } from '../types/message';
 import { PlanEventData, AgentEvent, type TerminalUpdateEventData, type FileUpdateEventData } from '../types/event';
+import type { TaskLogEntry } from '../types/taskLog';
 import { useAgentEvents } from '../composables/useAgentEvents';
 import { useSessionPhase } from '../composables/useSessionPhase';
 import ComputerPanel from '../components/ComputerPanel.vue'
-import { ArrowDown, FileSearch, Lock, Globe, Link, Check, Ellipsis, Pencil, Star, Trash, FolderPlus, Folder, FolderSync, Pin, ChevronDown } from 'lucide-vue-next';
+import { ArrowDown, FileSearch, Lock, Globe, Link, Check, Ellipsis, Pencil, Star, Trash, FolderPlus, Folder, FolderSync, Pin, FileText, Bookmark } from 'lucide-vue-next';
 import ShareIcon from '@/components/icons/ShareIcon.vue';
 import { showErrorToast, showSuccessToast } from '../utils/toast';
 import type { FileInfo } from '../api/file';
@@ -229,6 +226,25 @@ const isFavorite = ref(false);
 const isPinned = ref(false);
 const projectId = ref<string | null>(null);
 const taskMode = ref<'agent' | 'chat'>('agent');
+const showTaskLogsDrawer = ref(false);
+
+const { selectedModelId, activeModelName, ensureModelsLoaded, setSelectedModel, hydrateFromSession } = useActiveModel();
+
+const handleModelChange = async (modelId: string) => {
+  if (!sessionId.value || modelId === selectedModelId.value) {
+    setSelectedModel(modelId);
+    return;
+  }
+  const prev = selectedModelId.value;
+  setSelectedModel(modelId);
+  try {
+    await agentApi.updateSessionModel(sessionId.value, modelId);
+  } catch (e) {
+    if (prev) setSelectedModel(prev);
+    console.error('Failed to update session model', e);
+    showErrorToast(t('Failed to switch model'));
+  }
+};
 
 // Create initial state factory
 const createInitialState = () => ({
@@ -243,6 +259,7 @@ const createInitialState = () => ({
   lastMessageTool: undefined as ToolContent | undefined,
   lastTool: undefined as ToolContent | undefined,
   lastEventId: undefined as string | undefined,
+  logs: [] as TaskLogEntry[],
   cancelCurrentChat: null as (() => void) | null,
   attachments: [] as FileInfo[],
   shareMode: 'private' as 'private' | 'public', // Default to private mode
@@ -265,6 +282,7 @@ const {
   lastNoMessageTool,
   lastTool,
   lastEventId,
+  logs,
   cancelCurrentChat,
   attachments,
   shareMode,
@@ -291,8 +309,6 @@ const simpleBarRef = ref<InstanceType<typeof SimpleBar>>();
 const observerRef = ref<HTMLDivElement>();
 const chatContainerRef = ref<HTMLDivElement>();
 const moreBtnRef = ref<HTMLElement | null>(null);
-const modeMenuRef = ref<HTMLElement | null>(null);
-const showModeMenu = ref(false);
 const { showContextMenu } = useContextMenu();
 
 const toolHistory = computed(() => {
@@ -320,7 +336,6 @@ const showTakeControlBanner = computed(() =>
 const chatPlaceholder = computed(() => t('Send message to Manus'));
 
 const setTaskMode = async (mode: 'agent' | 'chat') => {
-  showModeMenu.value = false;
   if (!sessionId.value || taskMode.value === mode) return;
   const prev = taskMode.value;
   taskMode.value = mode;
@@ -330,14 +345,6 @@ const setTaskMode = async (mode: 'agent' | 'chat') => {
     taskMode.value = prev;
     console.error('Failed to update task mode', e);
     showErrorToast(t('Failed to update mode'));
-  }
-};
-
-const handleModeMenuOutside = (e: MouseEvent) => {
-  if (!showModeMenu.value) return;
-  const el = modeMenuRef.value;
-  if (el && !el.contains(e.target as Node)) {
-    showModeMenu.value = false;
   }
 };
 
@@ -383,7 +390,7 @@ const isAssistantLastBeforeUser = (index: number) => {
 
 // Shared agent event -> message list conversion
 const { handleEvent: handleAgentEvent } = useAgentEvents(
-  { messages, title, plan, lastEventId, lastTool, lastNoMessageTool },
+  { messages, title, plan, lastEventId, lastTool, lastNoMessageTool, logs },
   {
     onToolActivity: (tool: ToolContent) => {
       if (realTime.value) {
@@ -546,6 +553,7 @@ const restoreSession = async () => {
   isPinned.value = !!session.is_pinned;
   projectId.value = session.project_id ?? null;
   taskMode.value = session.task_mode === 'chat' ? 'chat' : 'agent';
+  hydrateFromSession(session.model_name);
   realTime.value = false;
   hydrateFromSessionStatus(session.status);
   for (const event of session.events) {
@@ -606,9 +614,10 @@ onBeforeRouteUpdate((to, _, next) => {
 })
 
 // Initialize active conversation
-onMounted(() => {
-  document.addEventListener('mousedown', handleModeMenuOutside);
+onMounted(async () => {
   hideFilePreviewer();
+  ensureModelsLoaded();
+
   const routeParams = router.currentRoute.value.params;
   if (routeParams.sessionId) {
     // If sessionId is included in URL, use it directly
@@ -626,7 +635,6 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  document.removeEventListener('mousedown', handleModeMenuOutside);
   const prevSessionId = sessionId.value;
   if (cancelCurrentChat.value) {
     cancelCurrentChat.value();

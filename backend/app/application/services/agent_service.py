@@ -1,10 +1,12 @@
 from typing import AsyncGenerator, Optional, List
 import logging
 from datetime import datetime
-from app.domain.models.session import Session, SessionSummary
+from app.domain.models.session import Session, SessionSummary, TaskMode
 from app.domain.repositories.session_repository import SessionRepository
 from app.domain.repositories.file_favorite_repository import FileFavoriteRepository
-from app.application.errors.exceptions import NotFoundError
+from app.application.errors.exceptions import NotFoundError, BadRequestError
+from app.core.config import ModelDescriptor
+from app.infrastructure.external.llm.model_registry import resolve_model
 
 from app.interfaces.schemas.session import ShellViewResponse
 from app.interfaces.schemas.file import FileViewResponse
@@ -58,17 +60,44 @@ class AgentService:
         self._search_engine = search_engine
         self._sandbox_cls = sandbox_cls
     
-    async def create_session(self, user_id: str) -> Session:
-        logger.info(f"Creating new session for user: {user_id}")
+    async def create_session(
+        self,
+        user_id: str,
+        project_id: Optional[str] = None,
+        task_mode: Optional[TaskMode] = None,
+        model_name: Optional[str] = None,
+        model_provider: Optional[str] = None,
+    ) -> Session:
+        logger.info(f"Creating new session for user: {user_id} with model: {model_name}")
+        desc = await self._validate_model(model_name)
         agent = await self._create_agent()
-        session = Session(agent_id=agent.id, user_id=user_id)
+        session = Session(
+            agent_id=agent.id,
+            user_id=user_id,
+            project_id=project_id,
+            task_mode=task_mode or TaskMode.AGENT,
+            model_name=desc.id if desc else None,
+            # Registry-authoritative: never trust a provider the client claims.
+            model_provider=desc.provider if desc else None,
+        )
         logger.info(f"Created new Session with ID: {session.id} for user: {user_id}")
         await self._session_repository.save(session)
         return session
 
+    async def _validate_model(self, model_name: Optional[str]) -> Optional[ModelDescriptor]:
+        """Resolve a model id against the registry, rejecting unknown ones."""
+        if not model_name:
+            return None
+        desc = await resolve_model(model_name)
+        if not desc:
+            raise BadRequestError(f"Unknown model: {model_name}")
+        return desc
+
     async def _create_agent(self) -> Agent:
         logger.info("Creating new agent")
         settings = get_settings()
+        # The session's model_name is the single source of truth for LLM
+        # routing; this records the process default for reference only.
         agent = Agent(
             model_name=settings.model_name,
             temperature=settings.temperature,
@@ -183,6 +212,27 @@ class AgentService:
         if not session:
             raise RuntimeError("Session not found")
         await self._session_repository.update_task_mode(session_id, task_mode)
+
+    async def update_session_model(
+        self,
+        session_id: str,
+        user_id: str,
+        model_name: str,
+        model_provider: Optional[str] = None,
+    ) -> ModelDescriptor:
+        """Update active LLM model name and provider for a session.
+
+        Returns the registry entry actually stored, so callers can echo the
+        resolved (not merely requested) provider back to the client.
+        """
+        session = await self._session_repository.find_by_id_and_user_id(session_id, user_id)
+        if not session:
+            raise RuntimeError("Session not found")
+        desc = await self._validate_model(model_name)
+        if not desc:
+            raise BadRequestError(f"Unknown model: {model_name}")
+        await self._session_repository.update_model(session_id, desc.id, desc.provider)
+        return desc
 
     async def update_library_file_favorite(
         self,

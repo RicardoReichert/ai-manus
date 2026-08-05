@@ -9,6 +9,14 @@ class ShellViewRequest(BaseModel):
     session_id: str
 
 
+class CreateSessionRequest(BaseModel):
+    """Create session request schema"""
+    project_id: Optional[str] = None
+    task_mode: Optional[TaskMode] = TaskMode.AGENT
+    model_name: Optional[str] = None
+    model_provider: Optional[str] = None
+
+
 class CreateSessionResponse(BaseModel):
     """Create session response schema"""
     session_id: str
@@ -25,6 +33,8 @@ class GetSessionResponse(BaseModel):
     is_pinned: bool = False
     project_id: Optional[str] = None
     task_mode: TaskMode = TaskMode.AGENT
+    model_name: Optional[str] = None
+    model_provider: Optional[str] = None
 
 
 class ListSessionItem(BaseModel):
@@ -40,6 +50,8 @@ class ListSessionItem(BaseModel):
     is_pinned: bool = False
     project_id: Optional[str] = None
     task_mode: TaskMode = TaskMode.AGENT
+    model_name: Optional[str] = None
+    model_provider: Optional[str] = None
 
     @staticmethod
     def from_domain(summary: SessionSummary) -> 'ListSessionItem':
@@ -55,6 +67,8 @@ class ListSessionItem(BaseModel):
             is_pinned=summary.is_pinned,
             project_id=summary.project_id,
             task_mode=summary.task_mode or TaskMode.AGENT,
+            model_name=summary.model_name,
+            model_provider=summary.model_provider,
         )
 
 
@@ -129,6 +143,18 @@ class UpdateSessionTaskModeRequest(BaseModel):
 class UpdateSessionTaskModeResponse(BaseModel):
     session_id: str
     task_mode: TaskMode
+
+
+class UpdateSessionModelRequest(BaseModel):
+    """Update session active model and provider"""
+    model_name: str
+    model_provider: Optional[str] = None
+
+
+class UpdateSessionModelResponse(BaseModel):
+    session_id: str
+    model_name: str
+    model_provider: Optional[str] = None
 
 
 class LibraryFileItem(BaseModel):

@@ -46,6 +46,10 @@ export interface StepEventData extends BaseEventData {
   status: "pending" | "running" | "completed" | "failed"
   id: string
   description: string
+  /** Unix seconds the step started, matching BaseEventData.timestamp. */
+  started_at?: number
+  /** Set once the step finishes; authoritative and survives reload. */
+  duration_ms?: number
 }
 
 export interface MessageEventData extends BaseEventData {

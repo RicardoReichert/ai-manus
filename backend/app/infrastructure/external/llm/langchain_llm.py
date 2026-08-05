@@ -6,8 +6,8 @@ inside the infrastructure layer, so the domain agents depend only on the
 :class:`app.domain.external.llm.LLM` Protocol and domain message types.
 """
 import logging
-from functools import lru_cache
-from typing import Any, Dict, List, Optional
+from collections import OrderedDict
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain.chat_models import init_chat_model
 from langchain.messages import (
@@ -29,6 +29,12 @@ from app.infrastructure.external.llm.robust_json_parser import (
 
 logger = logging.getLogger(__name__)
 
+# Distinguishes "caller did not specify a base_url, inherit API_BASE" from
+# "caller specified no base_url, use the provider default". Registry models
+# rely on the latter: a Gemini or DeepSeek entry must not silently inherit an
+# API_BASE that points at some other provider's endpoint.
+_INHERIT_API_BASE = object()
+
 
 class LangchainLLM:
     """Concrete :class:`LLM` gateway backed by LangChain chat models."""
@@ -37,20 +43,33 @@ class LangchainLLM:
         "Extract or repair the JSON from the following LLM output.\n\n{input}"
     )
 
-    def __init__(self, settings: Optional[Settings] = None, max_retries: int = 3):
+    def __init__(
+        self,
+        settings: Optional[Settings] = None,
+        max_retries: int = 3,
+        model_name: Optional[str] = None,
+        model_provider: Optional[str] = None,
+        base_url: Any = _INHERIT_API_BASE,
+        api_key: Optional[str] = None,
+    ):
         settings = settings or get_settings()
         self._max_retries = max_retries
 
+        target_model = model_name or settings.model_name
+        target_provider = model_provider or settings.model_provider
+        target_base_url = settings.api_base if base_url is _INHERIT_API_BASE else base_url
+        target_api_key = api_key or settings.api_key
+
         kwargs: Dict[str, Any] = dict(
-            model=settings.model_name,
-            model_provider=settings.model_provider,
+            model=target_model,
+            model_provider=target_provider,
             temperature=settings.temperature,
             max_tokens=settings.max_tokens,
         )
-        if settings.api_base and settings.model_provider != "google_genai":
-            kwargs["base_url"] = settings.api_base
-        if settings.api_key:
-            kwargs["api_key"] = settings.api_key
+        if target_base_url and target_provider != "google_genai":
+            kwargs["base_url"] = target_base_url
+        if target_api_key:
+            kwargs["api_key"] = target_api_key
         if settings.extra_headers:
             kwargs["default_headers"] = settings.extra_headers
         self._model = init_chat_model(**kwargs)
@@ -174,8 +193,42 @@ class LangchainLLM:
         return await self._json_output_parser.aparse_with_prompt(text, prompt_value)
 
 
-@lru_cache()
-def get_langchain_llm() -> LangchainLLM:
-    """Return a process-wide singleton LangChain LLM gateway."""
-    logger.info("Creating LangchainLLM gateway")
-    return LangchainLLM()
+# Constructing a LangchainLLM builds an HTTP client and a retrying output
+# parser, so gateways are cached per distinct target rather than per call.
+# The registry bounds the key space in practice; the cap is a safety net.
+_MAX_CACHED_GATEWAYS = 32
+_gateway_cache: "OrderedDict[Tuple[Optional[str], Optional[str], Any], LangchainLLM]" = OrderedDict()
+
+
+def get_langchain_llm(
+    model: Optional[str] = None,
+    provider: Optional[str] = None,
+    base_url: Any = _INHERIT_API_BASE,
+    api_key: Optional[str] = None,
+) -> LangchainLLM:
+    """Return a LangChain LLM gateway for a target, cached per target.
+
+    Called with no arguments it yields the globally configured gateway, which
+    is what the DI container and the Celery worker use. Pass ``base_url=None``
+    explicitly to mean "no base_url" rather than "inherit API_BASE".
+    """
+    key = (provider, model, base_url)
+    cached = _gateway_cache.get(key)
+    if cached is not None:
+        _gateway_cache.move_to_end(key)
+        return cached
+
+    logger.info(
+        "Creating LangchainLLM gateway (provider=%s, model=%s, base_url=%s)",
+        provider or "default", model or "default", base_url or "default",
+    )
+    gateway = LangchainLLM(
+        model_name=model,
+        model_provider=provider,
+        base_url=base_url,
+        api_key=api_key,
+    )
+    _gateway_cache[key] = gateway
+    while len(_gateway_cache) > _MAX_CACHED_GATEWAYS:
+        _gateway_cache.popitem(last=False)
+    return gateway

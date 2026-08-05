@@ -4,7 +4,29 @@ import logging
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
+from pydantic import BaseModel
+
 logger = logging.getLogger(__name__)
+
+
+class ModelDescriptor(BaseModel):
+    """A selectable LLM, as declared in the model registry file.
+
+    ``id`` is an opaque registry key (what a session persists in
+    ``Session.model_name``); ``model`` is the real model name handed to the
+    provider SDK. Keeping them separate lets the registry expose a stable,
+    human-chosen key without constraining the provider's naming.
+    """
+    id: str
+    name: str
+    provider: str
+    model: str
+    base_url: str | None = None
+    is_local: bool = False
+    description: str | None = None
+    # Name of the environment variable holding this model's credential.
+    # Falls back to the global API_KEY when unset.
+    api_key_env: str | None = None
 
 
 def _parse_extra_headers() -> dict | None:
@@ -145,6 +167,10 @@ class Settings(BaseSettings):
 
     # MCP configuration
     mcp_config_path: str = "/etc/mcp.json"
+
+    # Model registry configuration. JSON file declaring the selectable models,
+    # mounted the same way as mcp.json. See models.json.example.
+    models_config_path: str = "/etc/models.json"
     
     # Logging configuration
     log_level: str = "INFO"
