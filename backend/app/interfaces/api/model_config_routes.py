@@ -7,7 +7,7 @@ handle provider credentials. Regular users read the resulting list through
 import asyncio
 import logging
 import time
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends
 
@@ -21,10 +21,12 @@ from app.infrastructure.security import secret_box
 from app.interfaces.dependencies import get_current_user, get_model_config_repository
 from app.interfaces.schemas.base import APIResponse
 from app.interfaces.schemas.model_config import (
+    AvailableToolsResponse,
     CreateModelConfigRequest,
     ListModelConfigsResponse,
     ModelConfigResponse,
     TestModelConnectionResponse,
+    ToolInfo,
     UpdateModelConfigRequest,
     capabilities_from_schema,
 )
@@ -75,6 +77,67 @@ async def list_models(
     return APIResponse.success(
         ListModelConfigsResponse(models=[ModelConfigResponse.from_domain(m) for m in models])
     )
+
+
+@router.get("/tools", response_model=APIResponse[AvailableToolsResponse])
+async def list_available_tools(
+    current_user: User = Depends(get_current_user),
+) -> APIResponse[AvailableToolsResponse]:
+    """Every tool a model could be given, for the per-model tool picker.
+
+    Toolkits are instantiated with inert placeholders — construction only
+    stores the reference (sandbox/browser/search_engine are never called),
+    so this needs no live sandbox, browser session, or session context.
+    Browsing is listed as the single ``browse_web`` delegation tool rather
+    than BrowserToolkit's 12 tools: that toolkit only ever reaches a model
+    directly under the ``full`` profile, where it isn't optional anyway (see
+    PlanActFlow), and under ``lean`` it's what actually gets exposed.
+    """
+    _require_admin(current_user)
+
+    from app.domain.services.tools.browser import BrowserToolkit
+    from app.domain.services.tools.file import FileToolkit
+    from app.domain.services.tools.message import MessageToolkit
+    from app.domain.services.tools.search import SearchToolkit
+    from app.domain.services.tools.shell import ShellToolkit
+
+    placeholder = object()
+    # shell/file/message/search are common to both profiles; browser and
+    # delegation are each other's stand-in and never coexist for a given
+    # model (PlanActFlow adds exactly one of the two, never both), so they're
+    # tracked separately rather than folded into one combined tool_profile
+    # universe.
+    common_toolkits = [ShellToolkit(placeholder), FileToolkit(placeholder), MessageToolkit(), SearchToolkit(placeholder)]
+    browser_toolkit = BrowserToolkit(placeholder)
+
+    tool_infos: List[ToolInfo] = []
+    common_names: List[str] = []
+    for toolkit in common_toolkits:
+        for t in toolkit.get_tools():
+            common_names.append(t.name)
+            tool_infos.append(ToolInfo(name=t.name, toolkit=toolkit.name, description=t.description))
+
+    browser_names: List[str] = []
+    for t in browser_toolkit.get_tools():
+        browser_names.append(t.name)
+        tool_infos.append(ToolInfo(name=t.name, toolkit="browser", description=t.description))
+
+    browse_web_name = "browse_web"
+    tool_infos.append(ToolInfo(
+        name=browse_web_name,
+        toolkit="delegation",
+        description=(
+            "Delegate a browsing task to an isolated web sub-agent and get "
+            "its report back as text. Stands in for the full browser toolkit "
+            "under the lean profile."
+        ),
+    ))
+
+    profiles = {
+        "full": common_names + browser_names,
+        "lean": common_names + [browse_web_name],
+    }
+    return APIResponse.success(AvailableToolsResponse(tools=tool_infos, profiles=profiles))
 
 
 @router.post("", response_model=APIResponse[ModelConfigResponse])

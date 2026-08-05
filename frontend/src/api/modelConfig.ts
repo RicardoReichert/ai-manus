@@ -46,6 +46,7 @@ export interface CreateModelConfigInput {
   enabled?: boolean
   sort_order?: number
   tool_profile?: ToolProfile
+  enabled_tools?: string[]
 }
 
 export interface UpdateModelConfigInput {
@@ -54,18 +55,31 @@ export interface UpdateModelConfigInput {
   model?: string
   base_url?: string | null
   api_key?: string | null
-  clear_api_key?: boolean
   is_local?: boolean
   description?: string | null
   enabled?: boolean
   sort_order?: number
   tool_profile?: ToolProfile
+  enabled_tools?: string[]
 }
 
 export interface TestConnectionResult {
   ok: boolean
   error?: string | null
   latency_ms?: number | null
+}
+
+export interface ToolInfo {
+  name: string
+  toolkit: string
+  description: string
+}
+
+export interface AvailableTools {
+  tools: ToolInfo[]
+  // profile name -> tool names selected by that profile with no admin
+  // override — what the picker starts pre-checked as.
+  profiles: Record<ToolProfile, string[]>
 }
 
 export async function listModelConfigs(): Promise<ModelConfigEntry[]> {
@@ -89,6 +103,11 @@ export async function deleteModelConfig(id: string): Promise<void> {
 
 export async function testModelConnection(id: string): Promise<TestConnectionResult> {
   const response = await apiClient.post<ApiResponse<TestConnectionResult>>(`/admin/models/${encodeURIComponent(id)}/test`)
+  return response.data.data
+}
+
+export async function listAvailableTools(): Promise<AvailableTools> {
+  const response = await apiClient.get<ApiResponse<AvailableTools>>('/admin/models/tools')
   return response.data.data
 }
 

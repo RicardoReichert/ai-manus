@@ -144,7 +144,9 @@ class ToolInfo(BaseModel):
 
 class AvailableToolsResponse(BaseModel):
     tools: List[ToolInfo]
-    profiles: dict  # profile name -> list of tool names
+    # profile name -> tool names selected by that profile with no admin
+    # override — what the checkboxes start pre-checked as.
+    profiles: dict[str, List[str]]
 
 
 def capabilities_from_schema(schema: ModelCapabilitiesSchema) -> ModelCapabilities:

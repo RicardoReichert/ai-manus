@@ -127,34 +127,82 @@
           <input v-model="form.description" class="settings-input" :placeholder="t('Optional')" />
         </FormField>
 
-        <FormField :label="t('Tool profile')" :hint="t('Lean gives the model shell/file/message/search plus delegated browsing — best for small (~4B) models.')">
+        <FormField :label="t('Tool profile')">
           <div class="flex gap-1.5">
             <button
               v-for="profile in (['full', 'lean'] as const)"
               :key="profile"
               type="button"
+              :title="profile === 'full' ? t('Full profile tooltip') : t('Lean profile tooltip')"
               class="h-8 px-3 rounded-[8px] text-[13px] font-medium clickable border"
               :class="form.tool_profile === profile
                 ? 'border-[var(--Button-black)] text-[var(--text-primary)]'
                 : 'border-[var(--Button-border-secondary)] text-[var(--text-secondary)] hover:bg-[var(--fill-tsp-white-light)]'"
-              @click="form.tool_profile = profile"
+              @click="onProfileChange(profile)"
             >
               {{ profile === 'full' ? t('Full') : t('Lean') }}
             </button>
           </div>
+          <p class="text-[11px] text-[var(--text-tertiary)]">
+            {{ form.tool_profile === 'full' ? t('Full profile tooltip') : t('Lean profile tooltip') }}
+          </p>
         </FormField>
+
+        <FormField :label="t('Tools')" :hint="t('By default the profile above decides. Customize to pick exactly which tools this model can call.')">
+          <label class="flex items-center gap-2 text-[13px] text-[var(--text-secondary)] cursor-pointer mb-2">
+            <input v-model="customizeTools" type="checkbox" class="rounded" @change="onCustomizeToolsToggle" />
+            {{ t('Customize tool list') }}
+          </label>
+          <div v-if="customizeTools" class="space-y-3 rounded-[10px] bg-[var(--fill-tsp-white-main)] p-3">
+            <div v-for="group in toolGroupsForCurrentProfile" :key="group.toolkit">
+              <p class="text-[11px] font-semibold text-[var(--text-tertiary)] uppercase tracking-wider mb-1">{{ group.toolkit }}</p>
+              <label
+                v-for="tool in group.tools"
+                :key="tool.name"
+                class="flex items-center gap-2 text-[13px] text-[var(--text-secondary)] cursor-pointer py-0.5"
+                :title="tool.description"
+              >
+                <input
+                  type="checkbox"
+                  class="rounded"
+                  :checked="checkedTools.has(tool.name)"
+                  @change="toggleTool(tool.name)"
+                />
+                {{ tool.name }}
+              </label>
+            </div>
+            <p v-if="toolGroupsForCurrentProfile.length === 0" class="text-[12px] text-[var(--text-tertiary)]">
+              {{ t('Loading...') }}
+            </p>
+          </div>
+        </FormField>
+
+        <FormField v-if="editingModel" :label="t('Detected capabilities')" :hint="t('Auto-detected from the model name; only informational here.')">
+          <div class="flex flex-wrap gap-1.5 text-[12px] text-[var(--text-secondary)]">
+            <span class="px-2 py-1 rounded bg-[var(--fill-tsp-white-main)]">
+              {{ editingModel.capabilities.max_tools ? t('Tool budget: {n}', { n: editingModel.capabilities.max_tools }) : t('No tool limit') }}
+            </span>
+            <span v-if="editingModel.capabilities.needs_guided_decoding" class="px-2 py-1 rounded bg-[var(--fill-tsp-white-main)]">
+              {{ t('Guided decoding') }}
+            </span>
+            <span v-if="editingModel.capabilities.context_window" class="px-2 py-1 rounded bg-[var(--fill-tsp-white-main)]">
+              {{ t('{n} token context', { n: editingModel.capabilities.context_window.toLocaleString() }) }}
+            </span>
+            <span class="px-2 py-1 rounded bg-[var(--fill-tsp-white-main)]">
+              {{ editingModel.capabilities_auto_detected ? t('Auto-detected') : t('Manually set') }}
+            </span>
+          </div>
+        </FormField>
+
+        <label class="flex items-center gap-2 text-[13px] text-[var(--text-secondary)] cursor-pointer">
+          <input v-model="form.is_local" type="checkbox" class="rounded" />
+          {{ t('Local model (runs on your network, e.g. LM Studio, Ollama)') }}
+        </label>
 
         <label class="flex items-center gap-2 text-[13px] text-[var(--text-secondary)] cursor-pointer">
           <input v-model="form.enabled" type="checkbox" class="rounded" />
           {{ t('Enabled (visible in the model dropdown)') }}
         </label>
-
-        <div v-if="editingId" class="flex items-center justify-between">
-          <label class="flex items-center gap-2 text-[13px] text-[var(--text-secondary)] cursor-pointer">
-            <input v-model="form.clear_api_key" type="checkbox" class="rounded" />
-            {{ t('Remove stored API key') }}
-          </label>
-        </div>
 
         <div v-if="formError" class="text-[13px] text-red-500">{{ formError }}</div>
 
@@ -181,8 +229,8 @@ import { computed, h, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   listModelConfigs, createModelConfig, updateModelConfig, deleteModelConfig, testModelConnection,
-  MODEL_PROVIDER_PRESETS, type ModelConfigEntry, type ModelProviderPreset, type ToolProfile,
-  type TestConnectionResult,
+  listAvailableTools, MODEL_PROVIDER_PRESETS, type ModelConfigEntry, type ModelProviderPreset,
+  type ToolProfile, type TestConnectionResult, type ToolInfo,
 } from '@/api/modelConfig'
 import { useDialog } from '@/composables/useDialog'
 import { useActiveModel } from '@/composables/useActiveModel'
@@ -218,13 +266,83 @@ const form = reactive({
   model: '',
   base_url: '',
   api_key: '',
-  clear_api_key: false,
   enabled: true,
   is_local: false,
   provider: 'openai',
   tool_profile: 'full' as ToolProfile,
   description: '',
 })
+
+// Per-model tool picker (Perfil de ferramentas). Loaded once; independent of
+// which model is being created/edited.
+const availableTools = ref<ToolInfo[]>([])
+const toolProfileDefaults = ref<Record<ToolProfile, string[]>>({ full: [], lean: [] })
+const customizeTools = ref(false)
+const checkedTools = reactive(new Set<string>())
+
+async function loadAvailableTools() {
+  try {
+    const { tools, profiles } = await listAvailableTools()
+    availableTools.value = tools
+    toolProfileDefaults.value = profiles
+  } catch (err: any) {
+    console.warn('Failed to load available tools:', err?.message)
+  }
+}
+
+// Toolkits a given profile actually grants (mirrors the backend's
+// domain/services/tools/profiles.py): full gets the raw browser toolkit,
+// lean gets the single delegation tool instead — never both.
+const TOOLKITS_BY_PROFILE: Record<ToolProfile, string[]> = {
+  full: ['shell', 'browser', 'file', 'message', 'search'],
+  lean: ['shell', 'delegation', 'file', 'message', 'search'],
+}
+
+const toolGroupsForCurrentProfile = computed(() => {
+  const allowedToolkits = TOOLKITS_BY_PROFILE[form.tool_profile]
+  const byToolkit = new Map<string, ToolInfo[]>()
+  for (const tool of availableTools.value) {
+    if (!allowedToolkits.includes(tool.toolkit)) continue
+    if (!byToolkit.has(tool.toolkit)) byToolkit.set(tool.toolkit, [])
+    byToolkit.get(tool.toolkit)!.push(tool)
+  }
+  return allowedToolkits
+    .filter((tk) => byToolkit.has(tk))
+    .map((toolkit) => ({ toolkit, tools: byToolkit.get(toolkit)! }))
+})
+
+function toggleTool(name: string) {
+  if (checkedTools.has(name)) {
+    checkedTools.delete(name)
+  } else {
+    checkedTools.add(name)
+  }
+}
+
+function seedCheckedToolsFromProfile() {
+  checkedTools.clear()
+  for (const name of toolProfileDefaults.value[form.tool_profile] || []) {
+    checkedTools.add(name)
+  }
+}
+
+function onCustomizeToolsToggle() {
+  // Turning it on with nothing picked yet starts from "everything the
+  // profile already grants" rather than an empty (= nothing callable) list.
+  if (customizeTools.value && checkedTools.size === 0) {
+    seedCheckedToolsFromProfile()
+  }
+}
+
+function onProfileChange(profile: ToolProfile) {
+  form.tool_profile = profile
+  // A custom selection from the other profile could reference toolkits this
+  // one doesn't grant (e.g. browser_* tools while switching into lean) —
+  // reseed from the new profile's own defaults instead of carrying it over.
+  if (customizeTools.value) {
+    seedCheckedToolsFromProfile()
+  }
+}
 
 const currentPreset = computed(() => MODEL_PROVIDER_PRESETS.find((p) => p.id === selectedPresetId.value))
 
@@ -249,7 +367,10 @@ async function loadModels() {
   }
 }
 
-onMounted(loadModels)
+onMounted(() => {
+  loadModels()
+  loadAvailableTools()
+})
 
 function resetForm() {
   form.id = ''
@@ -257,7 +378,6 @@ function resetForm() {
   form.model = ''
   form.base_url = ''
   form.api_key = ''
-  form.clear_api_key = false
   form.enabled = true
   form.is_local = false
   form.provider = 'openai'
@@ -265,6 +385,8 @@ function resetForm() {
   form.description = ''
   formError.value = ''
   selectedPresetId.value = 'openai'
+  customizeTools.value = false
+  checkedTools.clear()
 }
 
 // Mirrors the backend's _ID_PATTERN (interfaces/schemas/model_config.py):
@@ -303,13 +425,15 @@ function openEditForm(m: ModelConfigEntry) {
   form.model = m.model
   form.base_url = m.base_url ?? ''
   form.api_key = ''
-  form.clear_api_key = false
   form.enabled = m.enabled
   form.is_local = m.is_local
   form.provider = m.provider
   form.tool_profile = m.tool_profile
   form.description = m.description ?? ''
   formError.value = ''
+  customizeTools.value = m.enabled_tools.length > 0
+  checkedTools.clear()
+  for (const name of m.enabled_tools) checkedTools.add(name)
   formOpen.value = true
 }
 
@@ -320,6 +444,10 @@ function closeForm() {
 async function handleSave() {
   formError.value = ''
   isSaving.value = true
+  // Empty list means "use the profile's default set" (backend contract, see
+  // domain/services/tools/profiles.py) — only send an explicit list when the
+  // admin actually opted into customizing it.
+  const enabled_tools = customizeTools.value ? Array.from(checkedTools) : []
   try {
     if (editingId.value) {
       await updateModelConfig(editingId.value, {
@@ -327,12 +455,12 @@ async function handleSave() {
         model: form.model,
         base_url: form.base_url || null,
         api_key: form.api_key || undefined,
-        clear_api_key: form.clear_api_key,
         enabled: form.enabled,
         is_local: form.is_local,
         provider: form.provider,
         tool_profile: form.tool_profile,
         description: form.description || null,
+        enabled_tools,
       })
       showSuccessToast(t('Model updated'))
     } else {
@@ -347,6 +475,7 @@ async function handleSave() {
         enabled: form.enabled,
         tool_profile: form.tool_profile,
         description: form.description || null,
+        enabled_tools,
       })
       showSuccessToast(t('Model added'))
     }

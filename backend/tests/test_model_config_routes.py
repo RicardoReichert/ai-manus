@@ -289,6 +289,39 @@ class TestDeleteModel:
         assert response.status_code == 404
 
 
+class TestAvailableTools:
+    """GET /admin/models/tools feeds the per-model tool picker in the UI."""
+
+    def test_non_admin_cannot_list_tools(self, client, user_headers):
+        response = client.get(f"{BASE_URL}/admin/models/tools", headers=user_headers)
+        assert response.status_code == 401
+
+    def test_lists_tools_from_every_core_toolkit(self, client, admin_headers):
+        response = client.get(f"{BASE_URL}/admin/models/tools", headers=admin_headers)
+        assert response.status_code == 200
+        toolkits = {t["toolkit"] for t in response.json()["data"]["tools"]}
+        assert toolkits == {"shell", "browser", "file", "message", "search", "delegation"}
+
+    def test_full_profile_includes_the_real_browser_tools_not_delegation(self, client, admin_headers):
+        response = client.get(f"{BASE_URL}/admin/models/tools", headers=admin_headers)
+        profiles = response.json()["data"]["profiles"]
+        assert "browser_navigate" in profiles["full"]
+        assert "browse_web" not in profiles["full"]
+
+    def test_lean_profile_includes_delegation_not_raw_browser_tools(self, client, admin_headers):
+        response = client.get(f"{BASE_URL}/admin/models/tools", headers=admin_headers)
+        profiles = response.json()["data"]["profiles"]
+        assert "browse_web" in profiles["lean"]
+        assert "browser_navigate" not in profiles["lean"]
+
+    def test_both_profiles_include_the_core_work_tools(self, client, admin_headers):
+        response = client.get(f"{BASE_URL}/admin/models/tools", headers=admin_headers)
+        profiles = response.json()["data"]["profiles"]
+        for expected in ("shell_exec", "file_write", "message_ask_user"):
+            assert expected in profiles["full"], expected
+            assert expected in profiles["lean"], expected
+
+
 class TestPublicListingReflectsRegistry:
     def test_a_newly_created_model_appears_in_the_public_dropdown(self, client, admin_headers, user_headers):
         model_id = _unique_model_id()
