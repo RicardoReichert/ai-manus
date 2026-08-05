@@ -59,7 +59,7 @@
             </div>
           </div>
           <div class="text-xs text-[var(--text-tertiary)]">
-            {{ getFileTypeText(attachment.filename) }} · {{ formatFileSize(attachment.size) }}
+            {{ getFileTypeText(attachment.filename) }}<template v-if="formatFileSize(attachment.size)"> · {{ formatFileSize(attachment.size) }}</template>
           </div>
         </div>
         <div

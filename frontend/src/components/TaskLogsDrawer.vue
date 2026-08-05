@@ -99,7 +99,7 @@
             >
               <FileText class="size-4 text-[var(--icon-secondary)] shrink-0" />
               <span class="truncate flex-1 font-mono">{{ file.filename }}</span>
-              <span class="text-[var(--text-tertiary)] shrink-0">{{ formatFileSize(file.size) }}</span>
+              <span v-if="formatFileSize(file.size)" class="text-[var(--text-tertiary)] shrink-0">{{ formatFileSize(file.size) }}</span>
             </div>
           </div>
         </div>
