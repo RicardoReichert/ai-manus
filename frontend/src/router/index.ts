@@ -32,6 +32,18 @@ export const router = createRouter({
       ]
     },
     {
+      path: '/agent',
+      component: () => import('../pages/MainLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          component: () => import('../pages/AgentPage.vue'),
+          meta: { requiresAuth: true }
+        }
+      ]
+    },
+    {
       path: '/data-controls',
       component: () => import('../pages/MainLayout.vue'),
       meta: { requiresAuth: true },
