@@ -47,4 +47,9 @@ Rules:
 - Explain what was accomplished and the final outcome in detail, in the
   working language.
 - Attach the files produced during the task that the user should receive.
+- Suggest 0-4 concrete follow-up actions the user might want next (e.g. "Add
+  a chart to the report", "Deploy this to production") in `follow_ups`.
+  Ground each one in what was actually built this task, not generic
+  boilerplate ("Let me know if you have questions" is not a follow-up).
+  Leave the list empty rather than force a suggestion that doesn't fit.
 """

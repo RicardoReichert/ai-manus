@@ -88,3 +88,12 @@ class FinalResult(BaseModel):
         default_factory=list,
         description="Absolute sandbox paths of files to deliver to the user",
     )
+    follow_ups: List[str] = Field(
+        default_factory=list,
+        description=(
+            "0-4 short, concrete suggestions (a few words each, in the user's"
+            " language) for what the user might reasonably want to do next"
+            " given this task's result. Empty list if nothing sensible comes"
+            " to mind — never pad with generic filler."
+        ),
+    )

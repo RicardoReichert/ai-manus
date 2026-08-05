@@ -118,7 +118,11 @@ class ExecutionAgent(BaseAgent):
                 result: FinalResult = event.output
                 logger.debug(f"Execution agent summary: {result.message}")
                 attachments = [FileInfo(file_path=file_path) for file_path in result.attachments]
-                yield MessageEvent(message=result.message, attachments=attachments)
+                yield MessageEvent(
+                    message=result.message,
+                    attachments=attachments,
+                    follow_ups=result.follow_ups or None,
+                )
                 continue
             if isinstance(event, MessageEvent):
                 continue

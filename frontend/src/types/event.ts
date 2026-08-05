@@ -56,6 +56,8 @@ export interface MessageEventData extends BaseEventData {
   content: string;
   role: "user" | "assistant";
   attachments: FileInfo[];
+  /** Only set on the final summarize() message (TAREFA 5.2). */
+  follow_ups?: string[] | null;
 }
 
 export interface ErrorEventData extends BaseEventData {

@@ -146,7 +146,9 @@
             :copy-text="lastAssistantPlainText" />
           <ChatTaskCompleted
             :visible="showTaskCompleted"
-            :copy-text="lastAssistantPlainText" />
+            :copy-text="lastAssistantPlainText"
+            :follow-ups="lastAssistantFollowUps"
+            @follow-up="handleFollowUpClick" />
           <!-- AgentIsTyping: only fill the empty gap before first visible turn output -->
           <LoadingIndicator v-if="showThinking" :text="$t('{name} is thinking', { name: 'Manus' })" />
           <!-- Official running spacer when work is already visible (tools/steps/messages) -->
@@ -360,6 +362,17 @@ const lastAssistantPlainText = computed(() => {
   if (i < 0) return '';
   return ((messages.value[i].content as MessageContent).content || '').trim();
 });
+
+// TAREFA 5.2 — only the final summarize() message ever carries follow_ups.
+const lastAssistantFollowUps = computed(() => {
+  const i = lastAssistantIndex.value;
+  if (i < 0) return [];
+  return (messages.value[i].content as MessageContent).follow_ups ?? [];
+});
+
+const handleFollowUpClick = (suggestion: string) => {
+  chat(suggestion);
+};
 
 /**
  * Official ChatReplyActions: show Copy under assistant replies that are not the
