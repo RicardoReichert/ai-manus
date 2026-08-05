@@ -100,6 +100,10 @@ class SessionRepository(Protocol):
         """Update the archived status of a session"""
         ...
 
+    async def update_rating(self, session_id: str, rating: Optional[int]) -> None:
+        """Set or clear the session's 1-5 star rating"""
+        ...
+
     async def update_project_id(self, session_id: str, project_id: Optional[str]) -> None:
         """Assign or clear project association for a session"""
         ...

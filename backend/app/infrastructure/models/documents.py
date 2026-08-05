@@ -122,6 +122,7 @@ class SessionDocument(BaseDocument[Session], id_field="session_id", domain_model
     is_favorite: Optional[bool] = False
     is_pinned: Optional[bool] = False
     is_archived: Optional[bool] = False
+    rating: Optional[int] = None
     project_id: Optional[str] = None
     task_mode: Optional[TaskMode] = TaskMode.AGENT
     model_name: Optional[str] = None

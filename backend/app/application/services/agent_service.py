@@ -13,6 +13,7 @@ from app.interfaces.schemas.file import FileViewResponse
 from app.domain.models.agent import Agent
 from app.domain.services.agent_domain_service import AgentDomainService
 from app.domain.models.event import AgentEvent
+from app.domain.services.session_usage import compute_session_usage
 from typing import Type
 from app.domain.models.agent import Agent
 from app.domain.external.sandbox import Sandbox
@@ -206,6 +207,25 @@ class AgentService:
         if not session:
             raise RuntimeError("Session not found")
         await self._session_repository.update_archived_status(session_id, is_archived)
+
+    async def update_session_rating(self, session_id: str, user_id: str, rating: Optional[int]) -> None:
+        """Set or clear a session's 1-5 star rating, ensuring it belongs to the user"""
+        if rating is not None and not (1 <= rating <= 5):
+            raise BadRequestError("Rating must be between 1 and 5")
+        session = await self._session_repository.find_by_id_and_user_id(session_id, user_id)
+        if not session:
+            raise RuntimeError("Session not found")
+        await self._session_repository.update_rating(session_id, rating)
+
+    async def get_session_usage(self, session_id: str, user_id: str) -> dict:
+        """Aggregate non-financial usage metrics for a task (TAREFA 4.1)"""
+        session = await self._session_repository.find_by_id_and_user_id(session_id, user_id)
+        if not session:
+            raise RuntimeError("Session not found")
+        return {
+            **compute_session_usage(session.events, session.files),
+            "rating": session.rating,
+        }
 
     async def update_session_project(
         self,

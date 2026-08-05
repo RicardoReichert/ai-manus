@@ -65,6 +65,8 @@ class Session(BaseModel):
     task_mode: TaskMode = TaskMode.AGENT
     model_name: Optional[str] = None
     model_provider: Optional[str] = None
+    # TAREFA 4.1 — 1-5 star rating on the usage panel; None if never rated.
+    rating: Optional[int] = None
 
     def get_last_plan(self) -> Optional[Plan]:
         """Get the last plan from the events"""

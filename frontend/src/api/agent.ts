@@ -166,6 +166,29 @@ export async function pinSession(sessionId: string, isPinned: boolean): Promise<
   return response.data.data;
 }
 
+export interface SessionUsage {
+  session_id: string;
+  worked_ms: number;
+  pages_viewed: number;
+  commands_run: number;
+  api_calls: number;
+  files_created: number;
+  rating: number | null;
+}
+
+export async function getSessionUsage(sessionId: string): Promise<SessionUsage> {
+  const response = await apiClient.get<ApiResponse<SessionUsage>>(`/sessions/${sessionId}/usage`);
+  return response.data.data;
+}
+
+export async function rateSession(sessionId: string, rating: number | null): Promise<{ session_id: string; rating: number | null }> {
+  const response = await apiClient.post<ApiResponse<{ session_id: string; rating: number | null }>>(
+    `/sessions/${sessionId}/rating`,
+    { rating },
+  );
+  return response.data.data;
+}
+
 export async function archiveSession(sessionId: string): Promise<{ session_id: string; is_archived: boolean }> {
   const response = await apiClient.post<ApiResponse<{ session_id: string; is_archived: boolean }>>(
     `/sessions/${sessionId}/archive`

@@ -128,6 +128,27 @@ class ArchiveSessionResponse(BaseModel):
     is_archived: bool
 
 
+class RatingRequest(BaseModel):
+    """Rate a session 1-5, or null to clear the rating"""
+    rating: Optional[int] = None
+
+
+class RatingResponse(BaseModel):
+    session_id: str
+    rating: Optional[int] = None
+
+
+class SessionUsageResponse(BaseModel):
+    """Non-financial usage metrics for a task (TAREFA 4.1) — deliberately no credits."""
+    session_id: str
+    worked_ms: int
+    pages_viewed: int
+    commands_run: int
+    api_calls: int
+    files_created: int
+    rating: Optional[int] = None
+
+
 class FavoriteLibraryFileResponse(BaseModel):
     """Favorite library file response schema"""
     file_id: str

@@ -17,6 +17,7 @@ from app.interfaces.schemas.session import (
     UpdateSessionTaskModeRequest, UpdateSessionTaskModeResponse,
     UpdateSessionModelRequest, UpdateSessionModelResponse,
     LibraryFileItem, LibraryResponse,
+    RatingRequest, RatingResponse, SessionUsageResponse,
 )
 from app.interfaces.schemas.file import FileViewRequest, FileViewResponse
 from app.interfaces.schemas.event import EventMapper
@@ -139,6 +140,25 @@ async def unarchive_session(
 ) -> APIResponse[ArchiveSessionResponse]:
     await agent_service.update_session_archived(session_id, current_user.id, False)
     return APIResponse.success(ArchiveSessionResponse(session_id=session_id, is_archived=False))
+
+@router.get("/{session_id}/usage", response_model=APIResponse[SessionUsageResponse])
+async def get_session_usage(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    agent_service: AgentService = Depends(get_agent_service)
+) -> APIResponse[SessionUsageResponse]:
+    usage = await agent_service.get_session_usage(session_id, current_user.id)
+    return APIResponse.success(SessionUsageResponse(session_id=session_id, **usage))
+
+@router.post("/{session_id}/rating", response_model=APIResponse[RatingResponse])
+async def rate_session(
+    session_id: str,
+    request: RatingRequest,
+    current_user: User = Depends(get_current_user),
+    agent_service: AgentService = Depends(get_agent_service)
+) -> APIResponse[RatingResponse]:
+    await agent_service.update_session_rating(session_id, current_user.id, request.rating)
+    return APIResponse.success(RatingResponse(session_id=session_id, rating=request.rating))
 
 @router.patch("/{session_id}/project", response_model=APIResponse[MoveSessionProjectResponse])
 async def move_session_project(

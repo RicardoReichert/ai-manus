@@ -310,6 +310,16 @@ class MongoSessionRepository(SessionRepository):
             raise ValueError(f"Session {session_id} not found")
         await self._notify_upsert(session_id)
 
+    async def update_rating(self, session_id: str, rating: Optional[int]) -> None:
+        """Set or clear the session's 1-5 star rating"""
+        result = await SessionDocument.find_one(
+            SessionDocument.session_id == session_id
+        ).update(
+            {"$set": {"rating": rating, "updated_at": datetime.now(UTC)}}
+        )
+        if not result:
+            raise ValueError(f"Session {session_id} not found")
+
     async def update_project_id(self, session_id: str, project_id: Optional[str]) -> None:
         """Assign or clear project association for a session"""
         result = await SessionDocument.find_one(

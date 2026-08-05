@@ -97,6 +97,9 @@
             </PopoverContent>
           </Popover>
 
+          <!-- Usage Panel -->
+          <UsagePanel :sessionId="sessionId" />
+
           <!-- Task Logs Drawer Button -->
           <button type="button" @click="showTaskLogsDrawer = true"
             class="flex items-center justify-center cursor-pointer rounded-md hover:bg-[var(--fill-tsp-white-light)] size-8 text-[var(--icon-secondary)]"
@@ -194,6 +197,7 @@ import ChatTaskCompleted from '../components/ChatTaskCompleted.vue';
 import ChatWaitingContinue from '../components/ChatWaitingContinue.vue';
 import TakeControlBanner from '../components/TakeControlBanner.vue';
 import TaskLogsDrawer from '../components/TaskLogsDrawer.vue';
+import UsagePanel from '../components/UsagePanel.vue';
 import ModelSelectorDropdown from '../components/ModelSelectorDropdown.vue';
 import { useActiveModel } from '../composables/useActiveModel';
 import * as agentApi from '../api/agent';
