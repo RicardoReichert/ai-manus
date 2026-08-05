@@ -201,7 +201,7 @@ import type { TaskLogEntry } from '../types/taskLog';
 import { useAgentEvents } from '../composables/useAgentEvents';
 import { useSessionPhase } from '../composables/useSessionPhase';
 import ComputerPanel from '../components/ComputerPanel.vue'
-import { ArrowDown, FileSearch, Lock, Globe, Link, Check, Ellipsis, Pencil, Star, Trash, FolderPlus, Folder, FolderSync, Pin, FileText, Bookmark } from 'lucide-vue-next';
+import { ArrowDown, FileSearch, Lock, Globe, Link, Check, Ellipsis, Pencil, Star, Trash, FolderPlus, Folder, FolderSync, Pin, FileText, Bookmark, Archive as ArchiveIcon } from 'lucide-vue-next';
 import ShareIcon from '@/components/icons/ShareIcon.vue';
 import { showErrorToast, showSuccessToast } from '../utils/toast';
 import type { FileInfo } from '../api/file';
@@ -818,8 +818,8 @@ const handleMoreClick = async (event: MouseEvent | KeyboardEvent) => {
   const target = (moreBtnRef.value || event.currentTarget) as HTMLElement;
   if (!sessionId.value) return;
 
-  // Official session-detail … menu: Rename / Move to project / — / Pin / Favorite / Delete
-  // (skip scheduled / archive — no local product support)
+  // Official session-detail … menu: Rename / Move to project / — / Pin / Favorite / Archive / Delete
+  // (skip "Agendar tarefa" — no scheduling backend yet, see TAREFA 15.2)
   try {
     const res = await getProjects();
     projects.value = res.projects ?? [];
@@ -853,6 +853,7 @@ const handleMoreClick = async (event: MouseEvent | KeyboardEvent) => {
   items.push(createSeparator());
   items.push(createMenuItem('pin', pinnedNow ? t('Unpin') : t('Pin'), { icon: Pin }));
   items.push(createMenuItem('favorite', favoritedNow ? t('Unfavorite') : t('Add to favorites'), { icon: Star }));
+  items.push(createMenuItem('archive', t('Archive task'), { icon: ArchiveIcon }));
   items.push(createDangerMenuItem('delete', t('Delete'), { icon: Trash }));
 
   showContextMenu(sessionId.value, target, items, async (key: string) => {
@@ -892,6 +893,15 @@ const handleMoreClick = async (event: MouseEvent | KeyboardEvent) => {
         showSuccessToast(result.is_favorite ? t('Added to favorite') : t('Removed from favorite'));
       } catch {
         showErrorToast(t('Failed to update favorite'));
+      }
+    } else if (key === 'archive') {
+      if (!sessionId.value) return;
+      try {
+        await agentApi.archiveSession(sessionId.value);
+        showSuccessToast(t('Task archived'));
+        router.push('/');
+      } catch {
+        showErrorToast(t('Failed to archive task'));
       }
     } else if (key === 'new_project') {
       if (!sessionId.value) return;
