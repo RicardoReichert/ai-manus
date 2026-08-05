@@ -18,7 +18,6 @@ from app.interfaces.schemas.session import (
     UpdateSessionModelRequest, UpdateSessionModelResponse,
     LibraryFileItem, LibraryResponse,
     RatingRequest, RatingResponse, SessionUsageResponse,
-    SubtasksResponse,
 )
 from app.interfaces.schemas.file import FileViewRequest, FileViewResponse
 from app.interfaces.schemas.event import EventMapper
@@ -141,15 +140,6 @@ async def unarchive_session(
 ) -> APIResponse[ArchiveSessionResponse]:
     await agent_service.update_session_archived(session_id, current_user.id, False)
     return APIResponse.success(ArchiveSessionResponse(session_id=session_id, is_archived=False))
-
-@router.get("/{session_id}/subtasks", response_model=APIResponse[SubtasksResponse])
-async def get_session_subtasks(
-    session_id: str,
-    current_user: User = Depends(get_current_user),
-    agent_service: AgentService = Depends(get_agent_service)
-) -> APIResponse[SubtasksResponse]:
-    subtasks = await agent_service.get_session_subtasks(session_id, current_user.id)
-    return APIResponse.success(SubtasksResponse(session_id=session_id, **subtasks))
 
 @router.get("/{session_id}/usage", response_model=APIResponse[SessionUsageResponse])
 async def get_session_usage(

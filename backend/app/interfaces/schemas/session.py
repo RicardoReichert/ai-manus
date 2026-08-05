@@ -149,21 +149,6 @@ class SessionUsageResponse(BaseModel):
     rating: Optional[int] = None
 
 
-class SubtaskItem(BaseModel):
-    """One plan step, as seen from the Agent page's Subtasks panel (TAREFA 1.1)"""
-    id: str
-    description: str
-    status: str
-    duration_ms: Optional[int] = None
-
-
-class SubtasksResponse(BaseModel):
-    session_id: str
-    plan_title: Optional[str] = None
-    goal: Optional[str] = None
-    steps: List[SubtaskItem] = []
-
-
 class FavoriteLibraryFileResponse(BaseModel):
     """Favorite library file response schema"""
     file_id: str

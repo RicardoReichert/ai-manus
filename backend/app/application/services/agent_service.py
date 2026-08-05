@@ -335,29 +335,6 @@ class AgentService:
         sessions = await self._session_repository.find_by_user_id(user_id)
         return search_messages(sessions, query, limit=limit)
 
-    async def get_session_subtasks(self, session_id: str, user_id: str) -> dict:
-        """Subtasks panel data for the Agent page (TAREFA 1.1) — the current
-        plan's steps, straight from the session's own last PlanEvent."""
-        session = await self._session_repository.find_by_id_and_user_id(session_id, user_id)
-        if not session:
-            raise RuntimeError("Session not found")
-        plan = session.get_last_plan()
-        if not plan:
-            return {"plan_title": None, "goal": None, "steps": []}
-        return {
-            "plan_title": plan.title or None,
-            "goal": plan.goal or None,
-            "steps": [
-                {
-                    "id": step.id,
-                    "description": step.description,
-                    "status": step.status,
-                    "duration_ms": step.duration_ms,
-                }
-                for step in plan.steps
-            ],
-        }
-
     async def stop_session(self, session_id: str, user_id: str) -> None:
         """Stop a session, ensuring it belongs to the user"""
         logger.info(f"Stopping session {session_id} for user {user_id}")

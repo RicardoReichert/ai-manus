@@ -65,21 +65,7 @@
           </template>
         </div>
 
-        <!-- Agent — Subtasks panel for the most recent task (1.1) -->
-        <div
-          @click="handleAgentClick"
-          :title="isSessionSidebarShow ? undefined : t('Agent')"
-          class="flex items-center rounded-[10px] clickable cursor-pointer transition-colors w-full gap-[8px] h-[36px] pointer-events-auto ps-[8px] pe-[2px]"
-          :class="route.path === '/agent' ? 'bg-[var(--fill-tsp-white-main)]' : 'hover:bg-[var(--fill-tsp-white-light)]'">
-          <div class="shrink-0 size-[20px] flex items-center justify-center">
-            <Bot :size="18" class="text-[var(--text-primary)]" />
-          </div>
-          <div v-if="isSessionSidebarShow" class="flex-1 min-w-0 flex gap-[4px] items-center text-[14px] text-[var(--text-primary)]">
-            <span class="truncate">{{ t('Agent') }}</span>
-          </div>
-        </div>
-
-        <!-- Plugins / Scheduled — product not wired; hidden -->
+        <!-- Agent / Plugins / Scheduled — product not wired; hidden -->
 
         <!-- Library — full page /library -->
         <div
@@ -638,10 +624,6 @@ const handleSearchClick = () => {
 
 const handleLibraryClick = () => {
   router.push('/library')
-}
-
-const handleAgentClick = () => {
-  router.push('/agent')
 }
 
 const handleNewProjectClick = () => {

@@ -166,25 +166,6 @@ export async function pinSession(sessionId: string, isPinned: boolean): Promise<
   return response.data.data;
 }
 
-export interface SubtaskItem {
-  id: string;
-  description: string;
-  status: string;
-  duration_ms: number | null;
-}
-
-export interface SubtasksResponse {
-  session_id: string;
-  plan_title: string | null;
-  goal: string | null;
-  steps: SubtaskItem[];
-}
-
-export async function getSessionSubtasks(sessionId: string): Promise<SubtasksResponse> {
-  const response = await apiClient.get<ApiResponse<SubtasksResponse>>(`/sessions/${sessionId}/subtasks`);
-  return response.data.data;
-}
-
 export interface SessionUsage {
   session_id: string;
   worked_ms: number;
