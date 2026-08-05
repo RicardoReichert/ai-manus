@@ -449,6 +449,7 @@ import ClawIcon from './icons/ClawIcon.vue';
 import { useSessionSidebar } from '../composables/useSessionSidebar';
 import { useAuth } from '../composables/useAuth';
 import { useDialog } from '../composables/useDialog';
+import { useShortcuts } from '../composables/useShortcuts';
 import { useContextMenu, createMenuItem, createDangerMenuItem } from '../composables/useContextMenu';
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -538,8 +539,8 @@ const { currentUser } = useAuth()
 const showUserMenu = ref(false)
 const profileRef = ref<HTMLElement | null>(null)
 
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
-const newTaskShortcut = computed(() => (isMac ? '⌘K' : 'Ctrl K'))
+const { bindings: shortcutBindings, matches: matchesShortcut, formatBinding } = useShortcuts()
+const newTaskShortcut = computed(() => formatBinding(shortcutBindings.value['new-task']).join(' '))
 
 const avatarLetter = computed(() => {
   return currentUser.value?.fullname?.charAt(0)?.toUpperCase() || 'M'
@@ -813,7 +814,7 @@ const handleSessionArchived = (sessionId: string, _isArchived: boolean) => {
 }
 
 const handleKeydown = (event: KeyboardEvent) => {
-  if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+  if (matchesShortcut('new-task', event)) {
     event.preventDefault()
     handleNewTaskClick()
   }
