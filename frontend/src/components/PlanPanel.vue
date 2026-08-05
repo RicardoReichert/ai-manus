@@ -54,12 +54,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ChevronUp, ChevronDown } from 'lucide-vue-next';
 import PlanStepIcon from './PlanStepIcon.vue';
 import type { PlanEventData, StepEventData } from '../types/event';
 import { formatDuration } from '../utils/duration';
+import { eventBus, UI_OPEN_PLAN_PANEL } from '../utils/eventBus';
 
 const props = defineProps<{
   plan: PlanEventData;
@@ -71,6 +72,15 @@ const isExpanded = ref(false);
 const togglePanel = () => {
   isExpanded.value = !isExpanded.value;
 };
+
+// TAREFA 3.1 — composer "Plan (Ctrl+/)" menu item / shortcut
+const openFromShortcut = () => {
+  if (props.plan?.steps?.length) {
+    isExpanded.value = true;
+  }
+};
+onMounted(() => eventBus.on(UI_OPEN_PLAN_PANEL, openFromShortcut));
+onUnmounted(() => eventBus.off(UI_OPEN_PLAN_PANEL, openFromShortcut));
 
 const steps = computed(() => props.plan?.steps ?? []);
 

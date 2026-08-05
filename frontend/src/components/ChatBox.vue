@@ -56,6 +56,16 @@
       test-id="chatbox-slash-menu"
       @select="handleSlashSelect"
     />
+    <LibraryPickerDialog
+      :visible="showLibraryPicker"
+      @close="showLibraryPicker = false"
+      @select="handleLibrarySelect"
+    />
+    <RecentTasksPickerDialog
+      :visible="showRecentTasksPicker"
+      @close="showRecentTasksPicker = false"
+      @select="handleRecentTaskSelect"
+    />
   </div>
 </template>
 
@@ -79,12 +89,18 @@ import {
 import { Plus, Paperclip } from 'lucide-vue-next'
 import type { FileInfo } from '../api/file'
 import type { Range } from '@tiptap/core'
+import LibraryPickerDialog from './chatbox/LibraryPickerDialog.vue'
+import RecentTasksPickerDialog from './chatbox/RecentTasksPickerDialog.vue'
+import type { ListSessionItem } from '../types/response'
+import { eventBus, UI_OPEN_PLAN_PANEL } from '../utils/eventBus'
 
 const { t } = useI18n()
 const hasTextInput = ref(false)
 const chatBoxFileListRef = ref()
 const showPlusMenu = ref(false)
 const plusMenuRef = ref<HTMLElement | null>(null)
+const showLibraryPicker = ref(false)
+const showRecentTasksPicker = ref(false)
 
 const slashMenuOpen = ref(false)
 const slashMenuItems = ref<SlashItem[]>([])
@@ -95,6 +111,9 @@ let slashRange: Range | null = null
 
 const plusMenuItems: SlashMenuItem[] = [
   { id: 'add_local_files', titleKey: 'Add local files' },
+  { id: 'from_library', titleKey: 'From Library' },
+  { id: 'recent_tasks', titleKey: 'Recent Tasks' },
+  { id: 'plan', titleKey: 'Plan (Ctrl+/)' },
 ]
 const plusMenuPositionStyle = {
   position: 'absolute',
@@ -156,9 +175,43 @@ const runAddLocalFiles = () => {
   uploadFile()
 }
 
-const handlePlusSelect = (_item: SlashMenuItem) => {
+const openPlanPanel = () => {
   showPlusMenu.value = false
+  slashMenuOpen.value = false
+  eventBus.emit(UI_OPEN_PLAN_PANEL)
+}
+
+const handlePlusSelect = (item: SlashMenuItem) => {
+  showPlusMenu.value = false
+  if (item.id === 'from_library') {
+    showLibraryPicker.value = true
+    return
+  }
+  if (item.id === 'recent_tasks') {
+    showRecentTasksPicker.value = true
+    return
+  }
+  if (item.id === 'plan') {
+    openPlanPanel()
+    return
+  }
   uploadFile()
+}
+
+const handleLibrarySelect = (file: FileInfo) => {
+  showLibraryPicker.value = false
+  // No 'status' field: ChatBoxFiles.vue only special-cases 'uploading'/'failed',
+  // so an already-uploaded FileInfo without a status renders as done.
+  emit('update:attachments', [...props.attachments, file])
+}
+
+const handleRecentTaskSelect = (session: ListSessionItem) => {
+  showRecentTasksPicker.value = false
+  const title = session.title || t('New Chat')
+  const reference = t('Regarding task "{title}": ', { title })
+  const current = props.modelValue ? `${props.modelValue} ` : ''
+  emit('update:modelValue', current + reference)
+  focus()
 }
 
 const handleSlashSelect = (item: SlashMenuItem) => {
@@ -287,6 +340,11 @@ const editor = useEditor({
           handleSubmit()
           return true
         }
+      }
+      if (event.key === '/' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault()
+        openPlanPanel()
+        return true
       }
       return false
     },
