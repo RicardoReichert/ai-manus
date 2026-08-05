@@ -242,6 +242,15 @@ export async function logout(): Promise<Record<string, never>> {
 }
 
 /**
+ * Log out of every device/session for the current user (revokes all refresh tokens)
+ * @returns Success response
+ */
+export async function logoutAll(): Promise<Record<string, never>> {
+  const response = await apiClient.post<ApiResponse<Record<string, never>>>('/auth/logout-all');
+  return response.data.data;
+}
+
+/**
  * Send verification code for password reset
  * @param request Email to send verification code to
  * @returns Success response

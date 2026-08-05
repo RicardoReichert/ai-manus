@@ -78,7 +78,7 @@ export async function deleteFile(fileId: string): Promise<boolean> {
  */
 export async function getFileInfo(fileId: string): Promise<FileInfo | null> {
   try {
-    const response = await apiClient.get<ApiResponse<FileInfo>>(`/files/${fileId}`);
+    const response = await apiClient.get<ApiResponse<FileInfo>>(`/files/${fileId}/info`);
     return response.data.data;
   } catch (error) {
     console.error('Failed to get file info:', error);

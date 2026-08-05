@@ -82,6 +82,24 @@
         </button>
       </div>
     </div>
+
+    <div v-if="authProvider !== 'none'" class="rounded-[12px] p-[12px] -m-[12px]">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <div class="flex flex-col items-start justify-center flex-1 min-w-0">
+          <span class="text-sm font-medium text-[var(--text-primary)]">{{ t('Log out of all devices') }}</span>
+          <div class="text-[13px] text-[var(--text-tertiary)] leading-[18px] w-full">
+            {{ t('Sign out of your account everywhere, including other browsers and devices.') }}
+          </div>
+        </div>
+        <button
+          type="button"
+          class="inline-flex items-center justify-center whitespace-nowrap font-medium transition-colors hover:opacity-90 active:opacity-80 px-[12px] rounded-[10px] gap-[6px] text-sm min-w-16 outline outline-1 -outline-offset-1 hover:bg-[var(--fill-tsp-white-light)] text-[var(--function-error)] outline-[var(--border-btn-main)] bg-transparent h-[32px]"
+          @click="handleLogoutAll"
+        >
+          {{ t('Log out everywhere') }}
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -90,13 +108,15 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '@/composables/useAuth'
+import { useDialog } from '@/composables/useDialog'
 import { changeFullname } from '@/api/auth'
 import { getCachedAuthProvider } from '@/api/config'
 import { showSuccessToast, showErrorToast } from '@/utils/toast'
 
 const router = useRouter()
 const { t } = useI18n()
-const { currentUser, logout, loadCurrentUser } = useAuth()
+const { currentUser, logout, logoutAll, loadCurrentUser } = useAuth()
+const { showConfirmDialog } = useDialog()
 const authProvider = ref<string | null>(null)
 const localFullname = ref(currentUser.value?.fullname || '')
 const copied = ref(false)
@@ -145,6 +165,23 @@ const handleLogout = async () => {
   } catch (error) {
     console.error('Logout failed:', error)
   }
+}
+
+const handleLogoutAll = () => {
+  showConfirmDialog({
+    title: t('Log out of all devices'),
+    content: t('This will sign you out everywhere, including other browsers and devices. You will need to log in again.'),
+    confirmText: t('Log out everywhere'),
+    confirmType: 'danger',
+    onConfirm: async () => {
+      try {
+        await logoutAll()
+        router.push('/login')
+      } catch (error) {
+        console.error('Logout-all failed:', error)
+      }
+    }
+  })
 }
 
 onMounted(async () => {

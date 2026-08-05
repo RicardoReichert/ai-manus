@@ -16,6 +16,7 @@ import {
   AgentEvent,
 } from '../types/event';
 import type { TaskLogEntry, TaskLogKind } from '../types/taskLog';
+import { i18n } from './useI18n';
 
 export interface AgentEventState {
   messages: Ref<Message[]>;
@@ -155,10 +156,11 @@ export function useAgentEvents(state: AgentEventState, options: AgentEventOption
   };
 
   const logLabel = (event: AgentEvent): { label: string; detail?: string } => {
+    const { t } = i18n.global;
     switch (event.event) {
       case 'message': {
         const d = event.data as MessageEventData;
-        return { label: d.role === 'user' ? 'User message' : 'Assistant message', detail: d.content };
+        return { label: d.role === 'user' ? t('User message') : t('Assistant message'), detail: d.content };
       }
       case 'tool': {
         const d = event.data as ToolEventData;
@@ -170,20 +172,20 @@ export function useAgentEvents(state: AgentEventState, options: AgentEventOption
       }
       case 'plan': {
         const d = event.data as PlanEventData;
-        return { label: `Plan updated (${d.steps.length} steps)` };
+        return { label: t('Plan updated ({n} steps)', { n: d.steps.length }) };
       }
       case 'error': {
         const d = event.data as ErrorEventData;
-        return { label: 'Error', detail: d.error };
+        return { label: t('Error'), detail: d.error };
       }
       case 'title': {
         const d = event.data as TitleEventData;
-        return { label: 'Title set', detail: d.title };
+        return { label: t('Title set'), detail: d.title };
       }
       case 'wait':
-        return { label: 'Waiting for input' };
+        return { label: t('Waiting for input') };
       case 'done':
-        return { label: 'Task finished' };
+        return { label: t('Task finished') };
       default:
         return { label: event.event };
     }
@@ -209,7 +211,10 @@ export function useAgentEvents(state: AgentEventState, options: AgentEventOption
     } else if (event.event === 'done') {
       // Loading state is cleared when the stream ends / status_update arrives
     } else if (event.event === 'wait') {
-      // TODO: handle wait event
+      // No-op by design: live phase (including the "waiting" state) is driven
+      // solely by the WS status_update channel, not by this domain event
+      // stream — see docs/superpowers/specs/2026-08-03-backend-status-channel-design.md.
+      // The event is still recorded below for the Task Logs drawer.
     } else if (event.event === 'error') {
       handleErrorEvent(event.data as ErrorEventData);
     } else if (event.event === 'title') {
