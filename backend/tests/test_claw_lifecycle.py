@@ -165,3 +165,33 @@ async def test_provision_success_sets_expiry_from_start_time():
     # expires_at must be anchored at provisioning start, not at readiness,
     # so the DB record never outlives the container's own TTL clock.
     assert before + timedelta(seconds=3600) <= claw.expires_at <= after + timedelta(seconds=3600)
+
+
+async def test_set_model_persists_the_chosen_model():
+    claw = _make_claw()
+    repo = FakeClawRepository(claw)
+    service = ClawDomainService(repo, FakeClawRuntime(), FakeClawClient())
+
+    updated = await service.set_model("user-1", "gpt-4o")
+
+    assert updated.claw_model_id == "gpt-4o"
+    assert repo.claw.claw_model_id == "gpt-4o"
+
+
+async def test_set_model_none_resets_to_the_default():
+    claw = _make_claw(claw_model_id="gpt-4o")
+    repo = FakeClawRepository(claw)
+    service = ClawDomainService(repo, FakeClawRuntime(), FakeClawClient())
+
+    updated = await service.set_model("user-1", None)
+
+    assert updated.claw_model_id is None
+
+
+async def test_set_model_without_a_claw_instance_returns_none():
+    repo = FakeClawRepository(None)
+    service = ClawDomainService(repo, FakeClawRuntime(), FakeClawClient())
+
+    result = await service.set_model("user-1", "gpt-4o")
+
+    assert result is None

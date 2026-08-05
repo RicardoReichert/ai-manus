@@ -84,6 +84,9 @@ class ClawService:
     async def verify_api_key(self, api_key: str) -> Optional[str]:
         return await self.domain.verify_api_key(api_key, self.settings.claw_api_key)
 
+    async def set_model(self, user_id: str, model_id: Optional[str]) -> Optional[Claw]:
+        return await self.domain.set_model(user_id, model_id)
+
     # ------------------------------------------------------------------
     # Claw creation – background provisioning
     # ------------------------------------------------------------------

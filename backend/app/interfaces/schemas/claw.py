@@ -12,6 +12,7 @@ class ClawResponse(BaseModel):
     container_name: Optional[str] = None
     error_message: Optional[str] = None
     expires_at: Optional[datetime] = None
+    claw_model_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -24,9 +25,15 @@ class ClawResponse(BaseModel):
             container_name=claw.container_name,
             error_message=claw.error_message,
             expires_at=claw.expires_at,
+            claw_model_id=claw.claw_model_id,
             created_at=claw.created_at,
             updated_at=claw.updated_at,
         )
+
+
+class UpdateClawModelRequest(BaseModel):
+    """Body for PATCH /claw/model. model_id=None resets to the default model."""
+    model_id: Optional[str] = None
 
 
 class ClawApiKeyResponse(BaseModel):

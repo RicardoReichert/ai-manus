@@ -8,12 +8,13 @@ from fastapi.responses import Response
 
 from app.application.services.claw_service import ClawService
 from app.application.services.file_service import FileService
-from app.application.errors.exceptions import NotFoundError
+from app.application.errors.exceptions import BadRequestError, NotFoundError
 from app.interfaces.dependencies import get_current_user, get_claw_service, get_file_service
 from app.interfaces.schemas.base import APIResponse
 from app.interfaces.schemas.claw import (
     ClawResponse, ClawApiKeyResponse,
     ClawHistoryResponse, ClawMessageSchema, ClawAttachmentSchema,
+    UpdateClawModelRequest,
 )
 from app.interfaces.schemas.file import FileInfoResponse
 from app.domain.models.user import User
@@ -42,6 +43,28 @@ async def create_claw(
 ) -> APIResponse[ClawResponse]:
     """Create a new claw instance for the current user"""
     claw = await claw_service.create_claw(current_user.id)
+    return APIResponse.success(ClawResponse.from_domain(claw))
+
+
+@router.patch("/model", response_model=APIResponse[ClawResponse])
+async def update_claw_model(
+    request: UpdateClawModelRequest,
+    current_user: User = Depends(get_current_user),
+    claw_service: ClawService = Depends(get_claw_service),
+) -> APIResponse[ClawResponse]:
+    """Point the current user's claw at a different registered model.
+
+    Takes effect on the next message — openai_routes resolves the model per
+    request, so no container restart is needed.
+    """
+    if request.model_id is not None:
+        from app.infrastructure.external.llm.model_registry import resolve_model
+        if not await resolve_model(request.model_id):
+            raise BadRequestError(f"Unknown model: {request.model_id}")
+
+    claw = await claw_service.set_model(current_user.id, request.model_id)
+    if not claw:
+        raise NotFoundError("No claw instance found")
     return APIResponse.success(ClawResponse.from_domain(claw))
 
 

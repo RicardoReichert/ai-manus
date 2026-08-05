@@ -38,6 +38,8 @@ class Claw(BaseModel):
     status: ClawStatus = ClawStatus.CREATING
     error_message: Optional[str] = None
     expires_at: Optional[datetime] = None
+    # Registry model this user's Claw talks to. None = first enabled model.
+    claw_model_id: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

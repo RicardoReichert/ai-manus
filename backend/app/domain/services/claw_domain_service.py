@@ -72,6 +72,19 @@ class ClawDomainService:
                 await self.claw_repository.update(claw)
         return claw
 
+    async def set_model(self, user_id: str, model_id: Optional[str]) -> Optional[Claw]:
+        """Point this user's Claw at a different registry model.
+
+        Takes effect on the next chat request — openai_routes resolves this
+        per-request, so no container restart or config regeneration is
+        needed, unlike the openclaw.json alias it fronts.
+        """
+        claw = await self.claw_repository.get_by_user_id(user_id)
+        if not claw:
+            return None
+        claw.claw_model_id = model_id
+        return await self.claw_repository.update(claw)
+
     @staticmethod
     async def _health_check(base_url: str) -> bool:
         try:
