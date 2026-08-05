@@ -15,9 +15,11 @@
 
 As 15 tarefas classificadas como Nível 1–3 de dificuldade (mais BUG-2) foram implementadas nesta rodada, no branch `feature/paridade-manus-backlog`, uma por commit: **1.1, 1.5, 2.1, 3.1, 4.1, 4.3 (parcial), 5.2, 5.3, 6.1, 12.1 (parcial), 16.1, 17.2 (MVP), 17.3**, mais o hardening do BUG-2. Cada tarefa abaixo tem um bloco **"Implementado"** substituindo ou complementando o **"Escopo residual"** original, com o que de fato mudou de planejado para construído.
 
-**Verificação:** backend `uv run pytest` — 180 testes coletados, 164 passam (os 16 que falham são pré-existentes, confirmados via `git stash`, não relacionados a este trabalho); 65 desses 164 são novos, cobrindo todas as 6 tarefas de backend. Frontend `npm run test && npm run type-check && npm run lint && npm run build` — 20 arquivos/131 testes passando, 0 erros de tipo, 0 erros de lint (30 warnings pré-existentes de `any`), build de produção conclui e gera os chunks das páginas novas (`AgentPage`, `DataControlsPage`).
+**Ajuste pós-implementação:** a TAREFA 1.1 (item "Agente" na sidebar) foi construída, testada e depois **revertida** a pedido do usuário — redundante com "Manus Claw" na navegação (dois itens de sidebar de cheiro "agente"). Ver a tarefa para detalhes; commit `4e9d9fa`.
 
-**Não incluído neste lote** (Nível 4+ da lista de dificuldade, ou dependências explícitas de tarefas fora dele): 1.2, 1.3, 1.4/BUG-1, 2.2, 2.3, 3.2, 3.3, 4.2, 6.2 (já estava pronto), 6.3 (mesmo item do BUG-2), 7.x, 8.x, 9.x, 10.1, 11.1, 13.1, 14.1, 15.x, 17.1, BUG-3 — o restante deste documento os descreve como antes, sem alteração de status além da correção do diagnóstico do BUG-2 (ver Épico 18).
+**Verificação:** backend `uv run pytest` — 176 testes coletados, 160 passam (os 16 que falham são pré-existentes, confirmados via `git stash`, não relacionados a este trabalho). Frontend `npm run test && npm run type-check && npm run lint && npm run build` — 20 arquivos/131 testes passando, 0 erros de tipo, 0 erros de lint (30 warnings pré-existentes de `any`), build de produção conclui.
+
+**Não incluído neste lote** (Nível 4+ da lista de dificuldade, ou dependências explícitas de tarefas fora dele): 1.1 (implementado e depois revertido — ver acima), 1.2, 1.3, 1.4/BUG-1, 2.2, 2.3, 3.2, 3.3, 4.2, 6.2 (já estava pronto), 6.3 (mesmo item do BUG-2), 7.x, 8.x, 9.x, 10.1, 11.1, 13.1, 14.1, 15.x, 17.1, BUG-3 — o restante deste documento os descreve como antes, sem alteração de status além da correção do diagnóstico do BUG-2 (ver Épico 18).
 
 ---
 
@@ -25,7 +27,7 @@ As 15 tarefas classificadas como Nível 1–3 de dificuldade (mais BUG-2) foram 
 
 **Contexto:** A sidebar local tem `Nova Tarefa`, `Biblioteca`, `Manus Claw` (quebrado), `Projetos`, `Tarefas`. Falta paridade com Manus (`Nova tarefa`, `Agente`, `Plugins`, `Agendado`, `Biblioteca`, `Projetos`, `Tarefas`).
 
-### TAREFA 1.1 — Adicionar item "Agente" na sidebar `✅ Feito`
+### TAREFA 1.1 — Adicionar item "Agente" na sidebar `❌ Removido (decisão de produto)`
 Criar rota/página `Agente` com painel de Subtarefas e ícones superiores.
 ```gherkin
 Funcionalidade: Item de navegação Agente
@@ -44,7 +46,7 @@ Funcionalidade: Item de navegação Agente
 - Novo item na sidebar entre "Nova Tarefa" e "Biblioteca" em `SessionSidebar.vue` (mesmo padrão do bloco Claw, `SessionSidebar.vue:84-97`).
 - i18n: chave `Agent` / `Subtasks` em `src/locales/{en,pt,zh}.ts`.
 
-**Implementado:** `GET /sessions/{id}/subtasks` (`session_routes.py`, `agent_service.get_session_subtasks`, wrapper em torno do `Session.get_last_plan()` já existente) + `frontend/src/pages/AgentPage.vue` + item na sidebar entre "Nova Tarefa" e "Biblioteca". Como "Agente" não carrega um `sessionId` pela URL, mostra as Subtarefas da tarefa mais recente do usuário. 4 testes de integração em `backend/tests/test_session_subtasks.py`.
+**Implementado e depois removido.** A versão inicial (`GET /sessions/{id}/subtasks` + `AgentPage.vue` + item de sidebar) chegou a ser construída e testada, mas o usuário considerou o item redundante com "Manus Claw" na navegação — dois itens de sidebar com cheiro de "agente" — e pediu a remoção. Revertido de forma limpa (`git revert`, sem conflito). Tecnicamente as duas features não se sobrepõem (Claw é o gateway OpenClaw; Agente seria uma visão de Subtarefas sobre o plano que já aparece no painel do chat), mas a decisão de simplificar a navegação é do produto, não uma questão técnica — não reimplementar sem uma nova decisão em contrário.
 
 **Depende de:** nenhuma.
 
