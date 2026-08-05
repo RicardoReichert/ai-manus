@@ -79,6 +79,44 @@ This starts: frontend (5173), backend (8000), sandbox (8080), mockserver (8090),
 | `SANDBOX_ADDRESS` | `sandbox` | Use single dev sandbox container |
 | `LOG_LEVEL` | `DEBUG` | Verbose logging |
 
+### Model Registry (Settings > Models)
+
+Selectable LLMs (OpenAI, Google Gemini, LM Studio, Ollama, OpenRouter, …) live in MongoDB
+(`ModelConfigDocument`), managed by an admin through **Settings > Models** — not through a
+mounted file. Provider credentials are encrypted at rest with Fernet
+(`backend/app/infrastructure/security/secret_box.py`).
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `MODEL_ENCRYPTION_KEY` | Yes, to store/read any credential | Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. No default — rotating it makes stored credentials unreadable, so an operator must set it deliberately. Local models with no credential (LM Studio, Ollama) work without it. |
+
+**Upgrading an existing deployment** (one that relied on the old `models.json` + `MODEL_NAME`/`API_KEY`
+registry): the database starts empty, so run the one-time importer before the model dropdown will
+show anything:
+
+```bash
+docker compose -f docker-compose-development.yml exec backend uv run python -m scripts.import_models
+# --dry-run to preview first
+```
+
+It reads `MODELS_CONFIG_PATH` (default `/etc/models.json`, see `models.json.example`) plus the
+global `MODEL_NAME`/`MODEL_PROVIDER`/`API_KEY`, and is idempotent — safe to re-run.
+
+**Capabilities and tool profiles.** Registering a model auto-detects capabilities from a built-in
+catalog (`infrastructure/external/llm/model_catalog.py`) — known small models (Qwen3-4B, Gemma 4
+E4B, Phi-4-Mini) get a reduced tool budget and, when their profile is set to `lean`, browsing is
+delegated to an isolated sub-agent (`domain/services/agents/web.py`) instead of exposing the
+12-tool browser toolkit directly — the mechanism that keeps small models usable without losing
+functionality on large ones. Large/unrecognized hosted models default to full capability
+(no behavior change). See `domain/services/tools/profiles.py` for the `full`/`lean` definitions.
+
+**Claw model selection**: `PATCH /api/v1/claw/model` sets which registered model a user's Claw talks
+to (`ClawDocument.claw_model_id`); resolved per-request in `openai_routes.py`, so switching needs no
+container restart. In **dev mode** (`CLAW_ADDRESS=claw`, single shared container), every user
+authenticates with the same fixed `MANUS_API_KEY`, so `claw_service.verify_api_key` always resolves
+to a fixed service account rather than the real user — per-user model routing is only exercisable
+against a real per-user deployment (`DockerClawRuntime`), not the dev stack.
+
 ### Running Services Individually (Without Docker)
 
 **Backend:**
