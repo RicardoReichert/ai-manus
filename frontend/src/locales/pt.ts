@@ -326,6 +326,7 @@ export default {
   'Shortcuts': 'Atalhos',
   'Personalization': 'Personalização',
   'Get help': 'Obter ajuda',
+  'Home page': 'Página inicial',
   'Appearance': 'Aparência',
   'Theme': 'Tema',
   'Light': 'Claro',

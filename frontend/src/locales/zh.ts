@@ -325,6 +325,7 @@ export default {
   'Shortcuts': '快捷键',
   'Personalization': '个性化',
   'Get help': '获取帮助',
+  'Home page': '首页',
   'Appearance': '外观',
   'Theme': '主题',
   'Light': '浅色',

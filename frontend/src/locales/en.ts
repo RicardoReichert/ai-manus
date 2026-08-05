@@ -326,6 +326,7 @@ export default {
   'Shortcuts': 'Shortcuts',
   'Personalization': 'Personalization',
   'Get help': 'Get help',
+  'Home page': 'Home page',
   'Appearance': 'Appearance',
   'Theme': 'Theme',
   'Light': 'Light',
