@@ -60,6 +60,8 @@ class AgentTaskRunner(TaskRunner):
         search_engine: Optional[SearchEngine] = None,
         project_repository: Optional[ProjectRepository] = None,
         model_error: Optional[str] = None,
+        tool_profile: str = "full",
+        enabled_tools: Optional[List[str]] = None,
     ):
         self._model_error = model_error
         self._session_id = session_id
@@ -86,6 +88,8 @@ class AgentTaskRunner(TaskRunner):
             self._llm,
             self._search_engine,
             project_repository=self._project_repository,
+            tool_profile=tool_profile,
+            enabled_tools=enabled_tools,
         )
         # Snapshot file contents before mutating file tools (for Diff/Original views).
         self._file_old_by_call: Dict[str, str] = {}
@@ -490,7 +494,7 @@ class AgentTaskRunnerFactory(TaskRunnerFactory):
         if not browser:
             raise RuntimeError(f"Failed to get browser for Sandbox {sandbox_id}")
 
-        llm, model_error = await self._resolve_llm(session_id)
+        llm, model_error, tool_profile, enabled_tools = await self._resolve_llm(session_id)
 
         return AgentTaskRunner(
             session_id=session_id,
@@ -506,21 +510,27 @@ class AgentTaskRunnerFactory(TaskRunnerFactory):
             search_engine=self._search_engine,
             project_repository=self._project_repository,
             model_error=model_error,
+            tool_profile=tool_profile,
+            enabled_tools=enabled_tools,
         )
 
-    async def _resolve_llm(self, session_id: str) -> Tuple[LLM, Optional[str]]:
+    async def _resolve_llm(
+        self, session_id: str
+    ) -> Tuple[LLM, Optional[str], str, List[str]]:
         """Pick the LLM gateway for this session's chosen model.
 
-        Returns the default gateway plus an error message when the session
-        names a model the registry no longer knows about — the caller reports
-        that to the user rather than answering with a different model.
+        Returns the gateway, an error message when the session names a model
+        the registry no longer knows about (the caller reports that to the
+        user rather than answering with a different model), and the model's
+        tool profile so PlanActFlow can size the toolset to what the model
+        can actually handle.
         """
         if not self._session_repository:
-            return self._llm, None
+            return self._llm, None, "full", []
 
         session = await self._session_repository.find_by_id(session_id)
         if not session or not session.model_name:
-            return self._llm, None
+            return self._llm, None, "full", []
 
         from app.infrastructure.external.llm.langchain_llm import get_langchain_llm
         from app.infrastructure.external.llm.model_registry import api_key_for, resolve_model
@@ -531,18 +541,19 @@ class AgentTaskRunnerFactory(TaskRunnerFactory):
                 return self._llm, (
                     f"Model {session.model_name!r} is no longer available. "
                     f"Pick another model for this session and try again."
-                )
+                ), "full", []
             # desc.model, not session.model_name: the session stores the
             # registry id, which need not equal the provider's model name.
-            return get_langchain_llm(
+            llm = get_langchain_llm(
                 model=desc.model,
                 provider=desc.provider,
                 base_url=desc.base_url,
                 api_key=await api_key_for(desc),
                 capabilities=desc.capabilities,
-            ), None
+            )
+            return llm, None, desc.tool_profile, desc.enabled_tools
         except Exception as e:
             logger.exception(f"Failed to build LLM for model {session.model_name}: {e}")
             return self._llm, (
                 f"Could not initialize model {session.model_name!r}: {e}"
-            )
+            ), "full", []

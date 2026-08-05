@@ -74,6 +74,23 @@ class StepReport(BaseModel):
     )
 
 
+class WebFindings(BaseModel):
+    """Arguments of the ``report_findings`` output tool.
+
+    Submitted by the web sub-agent (see ``domain/services/agents/web.py``) to
+    hand its result back to the delegating agent as plain text — the
+    supervisor never sees the browser tool calls that produced it.
+    """
+
+    success: bool = Field(description="Whether the browsing task was completed successfully")
+    result: str = Field(
+        description=(
+            "What was found or done, in enough detail for the delegating agent"
+            " to use directly without re-browsing. In the working language."
+        )
+    )
+
+
 class FinalResult(BaseModel):
     """Arguments of the ``deliver_result`` output tool."""
 

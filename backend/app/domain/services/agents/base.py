@@ -239,7 +239,23 @@ class BaseAgent(ABC):
                         if tool.toolkit.name == "shell" and isinstance(function_args, dict)
                         else None
                     )
-                    if shell_id and hasattr(tool.toolkit, "sandbox"):
+                    # Delegation: drain the sub-agent's own events while its
+                    # browse_web call is in flight, same shape as the shell
+                    # console poll below — otherwise the UI sees one tool call
+                    # that silently takes as long as the whole sub-task.
+                    event_queue = getattr(tool.toolkit, "event_queue", None)
+                    if tool.toolkit.name == "delegation" and event_queue is not None:
+                        invoke_task = asyncio.create_task(self.invoke_tool(tool, tool_call))
+                        while not invoke_task.done():
+                            done, _ = await asyncio.wait({invoke_task}, timeout=0.5)
+                            while not event_queue.empty():
+                                yield event_queue.get_nowait()
+                            if done:
+                                break
+                        while not event_queue.empty():
+                            yield event_queue.get_nowait()
+                        tool_result = await invoke_task
+                    elif shell_id and hasattr(tool.toolkit, "sandbox"):
                         invoke_task = asyncio.create_task(self.invoke_tool(tool, tool_call))
                         last_fingerprint: Optional[str] = None
 

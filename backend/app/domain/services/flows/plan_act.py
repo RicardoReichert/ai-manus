@@ -1,7 +1,7 @@
 import logging
 from app.domain.services.flows.base import BaseFlow
 from app.domain.models.message import Message
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, List, Optional
 from enum import Enum
 from app.domain.models.event import (
     BaseEvent,
@@ -28,6 +28,9 @@ from app.domain.services.tools.browser import BrowserToolkit
 from app.domain.services.tools.file import FileToolkit
 from app.domain.services.tools.message import MessageToolkit
 from app.domain.services.tools.search import SearchToolkit
+from app.domain.services.tools.delegation import DelegationToolkit
+from app.domain.services.tools.profiles import toolkits_for_profile
+from app.domain.services.agents.web import WebAgent
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,8 @@ class PlanActFlow(BaseFlow):
         llm: LLM,
         search_engine: Optional[SearchEngine] = None,
         project_repository: Optional[ProjectRepository] = None,
+        tool_profile: str = "full",
+        enabled_tools: Optional[List[str]] = None,
     ):
         self._agent_id = agent_id
         self._repository = agent_repository
@@ -62,17 +67,56 @@ class PlanActFlow(BaseFlow):
         self.status = AgentStatus.IDLE
         self.plan = None
 
-        tools = [
-            ShellToolkit(sandbox),
-            BrowserToolkit(browser),
-            FileToolkit(sandbox),
-            MessageToolkit(),
-            mcp_tool
-        ]
-        
-        # Only add search tool when search_engine is not None
+        all_toolkits = {
+            "shell": ShellToolkit(sandbox),
+            "browser": BrowserToolkit(browser),
+            "file": FileToolkit(sandbox),
+            "message": MessageToolkit(),
+            "mcp": mcp_tool,
+        }
         if search_engine:
-            tools.append(SearchToolkit(search_engine))
+            all_toolkits["search"] = SearchToolkit(search_engine)
+
+        # None (the "full" profile) means no restriction, so a model with no
+        # configured profile — or one running on the global default — gets
+        # exactly the toolset the system always had. mcp is never gated by a
+        # profile: it is already opt-in per-deployment via mcp.json.
+        allowed = toolkits_for_profile(tool_profile)
+        if allowed is None:
+            tools = list(all_toolkits.values())
+        else:
+            tools = [
+                toolkit for key, toolkit in all_toolkits.items()
+                if key in allowed or key == "mcp"
+            ]
+            if "browser" not in allowed:
+                # Browsing isn't dropped, it's delegated: an isolated
+                # WebAgent (own toolkit, own memory namespace) takes the 12
+                # browser tools instead, so the supervisor's own tool count
+                # stays within the profile's budget regardless of how many
+                # steps a browsing task needs.
+                web_agent = WebAgent(
+                    agent_id=agent_id,
+                    agent_repository=agent_repository,
+                    llm=llm,
+                    tools=[all_toolkits["browser"]],
+                )
+                tools.append(DelegationToolkit(web_agent))
+
+        # enabled_tools narrows within the resolved toolkits — an admin
+        # unchecking one tool must not resurrect a toolkit the profile itself
+        # excluded (see domain/services/tools/profiles.py:select_tool_names
+        # for the equivalent pure-function contract this mirrors).
+        if enabled_tools:
+            allow = set(enabled_tools)
+            for toolkit in tools:
+                if toolkit.name == "mcp":
+                    # MCP tools are discovered asynchronously after this
+                    # constructor returns (MCPToolkit.initialized()), so
+                    # filtering here would just be overwritten later. MCP
+                    # access is already opt-in per-deployment via mcp.json.
+                    continue
+                toolkit.tools = [t for t in toolkit.get_tools() if t.name in allow]
 
         # Create planner and execution agents. The planner only receives a
         # compact capability overview instead of full tool schemas.

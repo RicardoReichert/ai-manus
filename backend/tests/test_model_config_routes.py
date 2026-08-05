@@ -41,6 +41,30 @@ def _unique_email(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}@example.com"
 
 
+# These tests run against the real dev database (see module docstring), and
+# the registry's default-model selection (model_registry.get_default_model)
+# picks the first enabled entry by (sort_order, name) — so a model left behind
+# by a previous run can silently become "the" default for Claw and real chat
+# traffic. Everything this file creates carries this prefix, and it is swept
+# after every test regardless of outcome.
+TEST_MODEL_ID_PREFIX = "pytest-model-config-"
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_test_models():
+    yield
+    client = MongoClient(MONGO_URL)
+    try:
+        client[MONGO_DB]["model_configs"].delete_many(
+            {"model_config_id": {"$regex": f"^{TEST_MODEL_ID_PREFIX}"}}
+        )
+        client[MONGO_DB]["users"].delete_many(
+            {"email": {"$regex": r"^model-(admin|nonadmin)-"}}
+        )
+    finally:
+        client.close()
+
+
 @pytest.fixture
 def admin_headers(client):
     """A freshly registered user, promoted to admin directly in Mongo."""
@@ -75,8 +99,8 @@ def user_headers(client):
     return {"Authorization": f"Bearer {token}"}
 
 
-def _unique_model_id(prefix: str = "test-model") -> str:
-    return f"{prefix}-{uuid.uuid4().hex[:8]}"
+def _unique_model_id(suffix: str = "test-model") -> str:
+    return f"{TEST_MODEL_ID_PREFIX}{suffix}-{uuid.uuid4().hex[:8]}"
 
 
 class TestAuthorization:

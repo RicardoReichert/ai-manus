@@ -61,7 +61,15 @@ class LangchainLLM:
         target_model = model_name or settings.model_name
         target_provider = model_provider or settings.model_provider
         target_base_url = settings.api_base if base_url is _INHERIT_API_BASE else base_url
-        target_api_key = api_key or settings.api_key
+        # The global API_KEY is only for the bare default gateway (no model
+        # named). A registry-resolved model (model_name/model_provider given)
+        # must use exactly its own stored credential, even if that's none —
+        # a local LM Studio/Ollama model with no key must never silently
+        # inherit a different provider's secret (e.g. Gemini's key sent to an
+        # OpenAI-compatible endpoint, which is a real credential leak, not
+        # just a wrong-provider error).
+        is_named_model = model_name is not None or model_provider is not None
+        target_api_key = api_key if is_named_model else (api_key or settings.api_key)
 
         kwargs: Dict[str, Any] = dict(
             model=target_model,
