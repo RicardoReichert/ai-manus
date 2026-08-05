@@ -52,6 +52,40 @@ class TestFromLangChain:
         m = gw._from_langchain(AIMessage(content="hello"))
         assert m.role == Role.ASSISTANT and m.content == "hello" and m.tool_calls == []
 
+    def test_gemini_thinking_block_list_extracts_text_only(self):
+        # Regression: Gemini 2.5 extended-thinking responses return content as
+        # a list of blocks carrying an opaque "extras.signature" blob. Before
+        # the fix this was stringified verbatim into the chat bubble.
+        gw = _gateway()
+        ai = AIMessage(content=[
+            {
+                "type": "text",
+                "text": "Hey. I just came online. Who am I? Who are you?",
+                "extras": {"signature": "CoUCARFNMg+3JmGJbw83oFIEjrVzSMkS..."},
+            }
+        ])
+        m = gw._from_langchain(ai)
+        assert m.content == "Hey. I just came online. Who am I? Who are you?"
+        assert "signature" not in m.content
+        assert "extras" not in m.content
+
+    def test_multiple_text_blocks_are_concatenated(self):
+        gw = _gateway()
+        ai = AIMessage(content=[{"type": "text", "text": "Hello, "}, {"type": "text", "text": "world."}])
+        m = gw._from_langchain(ai)
+        assert m.content == "Hello, world."
+
+    def test_non_text_blocks_contribute_nothing(self):
+        gw = _gateway()
+        ai = AIMessage(content=[{"type": "thinking", "thinking": "reasoning...", "extras": {}}])
+        m = gw._from_langchain(ai)
+        assert m.content == ""
+
+    def test_string_list_items_are_joined(self):
+        gw = _gateway()
+        m = gw._from_langchain(AIMessage(content=["part1", "part2"]))
+        assert m.content == "part1part2"
+
 
 class TestRoundTrip:
     def test_domain_to_lc_to_domain_preserves_tool_calls(self):

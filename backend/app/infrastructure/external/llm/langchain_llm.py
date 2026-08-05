@@ -116,6 +116,34 @@ class LangchainLLM:
                 )
         return lc_messages
 
+    @staticmethod
+    def _extract_text_content(raw: Any) -> str:
+        """Flatten LangChain's ``AIMessage.content`` to plain text.
+
+        Some providers (e.g. Gemini 2.5 with extended thinking) return
+        content as a list of typed blocks — ``[{"type": "text", "text": "…",
+        "extras": {"signature": "…"}}]`` — instead of a plain string. Without
+        this, ``str(raw)`` on the list leaked the raw Python repr (including
+        the opaque thinking-signature blob) straight into the chat bubble.
+        """
+        if isinstance(raw, str):
+            return raw
+        if raw is None:
+            return ""
+        if isinstance(raw, list):
+            parts: List[str] = []
+            for block in raw:
+                if isinstance(block, str):
+                    parts.append(block)
+                elif isinstance(block, dict):
+                    text = block.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+                    # Non-text blocks (e.g. thinking-only, signatures) carry
+                    # no user-visible text — silently omitted, not stringified.
+            return "".join(parts)
+        return str(raw)
+
     def _from_langchain(self, message: AIMessage) -> LLMMessage:
         tool_calls = [
             ToolCall(
@@ -125,13 +153,7 @@ class LangchainLLM:
             )
             for tc in (message.tool_calls or [])
         ]
-        raw = message.content
-        if isinstance(raw, str):
-            content = raw
-        elif raw is None:
-            content = ""
-        else:
-            content = str(raw)
+        content = self._extract_text_content(message.content)
         additional_kwargs = getattr(message, "additional_kwargs", {}) or {}
         return LLMMessage.assistant(
             content=content,

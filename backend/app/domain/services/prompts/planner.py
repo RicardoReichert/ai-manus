@@ -23,6 +23,12 @@ Planning rules:
   with blank strings.
 - If the task is infeasible, return an empty step list and an empty goal, and
   explain why in ``message``.
+- ``message`` is sent to the user verbatim, exactly as you would speak to
+  them directly — never describe your own planning process. Do not mention
+  "plan", "steps", "goal", or any of this tool's field names, and do not
+  restate the plan structure. For an empty-step plan, ``message`` is simply
+  your conversational reply (e.g. to "oi", reply "Oi! Como posso ajudar?" —
+  not a description of what you decided to do).
 </role>
 
 <executor_capabilities>
