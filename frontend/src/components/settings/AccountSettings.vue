@@ -3,7 +3,40 @@
     <div class="space-y-4">
       <div class="flex gap-4 items-center">
         <div class="flex items-center gap-4 flex-1 min-w-0">
-          <UserAvatar :avatar-url="currentUser?.avatar_url" :fallback-letter="avatarLetter" :size="64" />
+          <div class="flex flex-col items-start gap-2">
+            <UserAvatar :avatar-url="currentUser?.avatar_url" :fallback-letter="avatarLetter" :size="64" />
+            <div class="flex gap-2">
+              <button
+                type="button"
+                class="text-[13px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] clickable"
+                @click="triggerFilePicker"
+              >
+                {{ t('Change photo') }}
+              </button>
+              <button
+                v-if="currentUser?.avatar_url"
+                type="button"
+                class="text-[13px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] clickable"
+                @click="handleRemoveAvatar"
+              >
+                {{ t('Remove photo') }}
+              </button>
+            </div>
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              class="hidden"
+              @change="onFilePicked"
+            >
+          </div>
+
+          <AvatarCropDialog
+            v-if="pickedFile"
+            :file="pickedFile"
+            @saved="handleCropSaved"
+            @cancel="pickedFile = null"
+          />
           <div class="flex-1 min-w-0 space-y-1">
             <div class="text-[var(--text-tertiary)] text-[13px] leading-[18px] flex items-center gap-1">
               {{ t('Full name') }}
@@ -105,7 +138,8 @@ import { useI18n } from 'vue-i18n'
 import { useAuth } from '@/composables/useAuth'
 import { useDialog } from '@/composables/useDialog'
 import UserAvatar from '@/components/UserAvatar.vue'
-import { changeFullname } from '@/api/auth'
+import AvatarCropDialog from './AvatarCropDialog.vue'
+import { changeFullname, uploadAvatar, removeAvatar } from '@/api/auth'
 import { getCachedAuthProvider } from '@/api/config'
 import { showSuccessToast, showErrorToast } from '@/utils/toast'
 
@@ -116,6 +150,12 @@ const { showConfirmDialog } = useDialog()
 const authProvider = ref<string | null>(null)
 const localFullname = ref(currentUser.value?.fullname || '')
 const copied = ref(false)
+
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const pickedFile = ref<File | null>(null)
+
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024
+const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
 const avatarLetter = computed(() =>
   currentUser.value?.fullname?.charAt(0)?.toUpperCase() || 'M',
@@ -140,6 +180,49 @@ const updateFullname = async (newFullname: string) => {
 
 const handleFullnameSubmit = () => {
   updateFullname(localFullname.value)
+}
+
+const triggerFilePicker = () => {
+  fileInputRef.value?.click()
+}
+
+const onFilePicked = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = '' // allow picking the same file again later
+  if (!file) return
+  if (!ALLOWED_AVATAR_TYPES.includes(file.type)) {
+    showErrorToast(t('Please choose a JPEG, PNG, or WebP image.'))
+    return
+  }
+  if (file.size > MAX_AVATAR_BYTES) {
+    showErrorToast(t('Image must be 5MB or smaller.'))
+    return
+  }
+  pickedFile.value = file
+}
+
+const handleCropSaved = async (blob: Blob) => {
+  pickedFile.value = null
+  try {
+    await uploadAvatar(blob)
+    await loadCurrentUser()
+    showSuccessToast(t('Profile photo updated'))
+  } catch (error: unknown) {
+    const err = error as { response?: { data?: { message?: string } }; message?: string }
+    showErrorToast(err?.response?.data?.message || err?.message || t('Failed to update profile photo'))
+  }
+}
+
+const handleRemoveAvatar = async () => {
+  try {
+    await removeAvatar()
+    await loadCurrentUser()
+    showSuccessToast(t('Profile photo removed'))
+  } catch (error: unknown) {
+    const err = error as { response?: { data?: { message?: string } }; message?: string }
+    showErrorToast(err?.response?.data?.message || err?.message || t('Failed to remove profile photo'))
+  }
 }
 
 const copyUserId = async () => {

@@ -394,6 +394,16 @@ export default {
   // Profile Settings
   'Name': '名称',
   'Full name updated successfully': '姓名修改成功',
+  'Change photo': '更换照片',
+  'Remove photo': '移除照片',
+  'Adjust photo': '调整照片',
+  'Zoom': '缩放',
+  'Profile photo updated': '头像已更新',
+  'Profile photo removed': '头像已移除',
+  'Failed to update profile photo': '更新头像失败',
+  'Failed to remove profile photo': '移除头像失败',
+  'Please choose a JPEG, PNG, or WebP image.': '请选择 JPEG、PNG 或 WebP 格式的图片。',
+  'Image must be 5MB or smaller.': '图片大小不能超过 5MB。',
   'Failed to update full name': '姓名修改失败',
   'Update Password': '更新密码',
   // Change Password Dialog

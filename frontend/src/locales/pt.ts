@@ -395,6 +395,16 @@ export default {
   // Profile Settings
   'Name': 'Nome',
   'Full name updated successfully': 'Nome completo atualizado com sucesso',
+  'Change photo': 'Trocar foto',
+  'Remove photo': 'Remover foto',
+  'Adjust photo': 'Ajustar foto',
+  'Zoom': 'Zoom',
+  'Profile photo updated': 'Foto de perfil atualizada',
+  'Profile photo removed': 'Foto de perfil removida',
+  'Failed to update profile photo': 'Falha ao atualizar a foto de perfil',
+  'Failed to remove profile photo': 'Falha ao remover a foto de perfil',
+  'Please choose a JPEG, PNG, or WebP image.': 'Escolha uma imagem JPEG, PNG ou WebP.',
+  'Image must be 5MB or smaller.': 'A imagem deve ter no máximo 5MB.',
   'Failed to update full name': 'Falha ao atualizar nome completo',
   'Update Password': 'Atualizar Senha',
   // Change Password Dialog
