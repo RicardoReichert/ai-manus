@@ -159,7 +159,7 @@ class UserResponse(BaseModel):
         """Convert user domain model to response schema"""
         avatar_url = None
         if getattr(user, 'avatar_file_id', None):
-            avatar_url = f"/api/v1/auth/avatar/{user.id}?v={int(user.updated_at.timestamp())}"
+            avatar_url = f"/api/v1/auth/avatar/{user.id}?v={int(user.updated_at.timestamp() * 1_000_000)}"
         return UserResponse(
             id=user.id,
             fullname=user.fullname,

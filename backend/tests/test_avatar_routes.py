@@ -196,4 +196,4 @@ class TestUserResponseAvatarUrl:
             avatar_file_id="file-123", updated_at=ts,
         )
         response = UserResponse.from_domain(user)
-        assert response.avatar_url == f"/api/v1/auth/avatar/u1?v={int(ts.timestamp())}"
+        assert response.avatar_url == f"/api/v1/auth/avatar/u1?v={int(ts.timestamp() * 1_000_000)}"
