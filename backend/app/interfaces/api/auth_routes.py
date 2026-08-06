@@ -1,3 +1,4 @@
+import io
 from typing import Optional
 from fastapi import APIRouter, Depends, Request, Response, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -169,9 +170,12 @@ async def get_avatar(
         raise NotFoundError("Avatar not found")
     try:
         file_data, file_info = await file_service.download_file(target_user.avatar_file_id)
-    except (FileNotFoundError, PermissionError):
+    except (FileNotFoundError, PermissionError, ValueError):
         raise NotFoundError("Avatar not found")
-    headers = {"Cache-Control": "public, max-age=31536000, immutable"}
+    headers = {
+        "Cache-Control": "private, max-age=31536000, immutable",
+        "X-Content-Type-Options": "nosniff",
+    }
     return StreamingResponse(
         file_data,
         media_type=file_info.content_type or "image/jpeg",
@@ -192,7 +196,6 @@ async def upload_avatar(
     if len(contents) > _AVATAR_MAX_BYTES:
         raise BadRequestError("Avatar image must be 5MB or smaller")
 
-    import io
     file_info = await file_service.upload_file(
         file_data=io.BytesIO(contents),
         filename=file.filename or "avatar",

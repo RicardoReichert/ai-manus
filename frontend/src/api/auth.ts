@@ -192,9 +192,7 @@ export async function changeFullname(request: ChangeFullnameRequest): Promise<Us
 export async function uploadAvatar(blob: Blob): Promise<User> {
   const formData = new FormData();
   formData.append('file', blob, 'avatar.jpg');
-  const response = await apiClient.post<ApiResponse<User>>('/auth/avatar', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  const response = await apiClient.post<ApiResponse<User>>('/auth/avatar', formData);
   return response.data.data;
 }
 
