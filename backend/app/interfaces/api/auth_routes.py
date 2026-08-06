@@ -4,11 +4,13 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import logging
 
 from app.application.services.auth_service import AuthService
+from app.application.services.file_service import FileService
+from fastapi.responses import StreamingResponse
 from app.application.services.email_service import EmailService
 from app.application.errors.exceptions import (
     UnauthorizedError, NotFoundError, BadRequestError
 )
-from app.interfaces.dependencies import get_auth_service, get_current_user, get_email_service
+from app.interfaces.dependencies import get_auth_service, get_current_user, get_email_service, get_file_service
 from app.interfaces.schemas.base import APIResponse
 from app.interfaces.schemas.auth import (
     LoginRequest, RegisterRequest, ChangePasswordRequest, ChangeFullnameRequest, RefreshTokenRequest,
@@ -148,6 +150,30 @@ async def get_current_user_info(
     current_user: User = Depends(get_current_user)
 ) -> APIResponse[UserResponse]:
     return APIResponse.success(UserResponse.from_domain(current_user))
+
+
+@router.get("/avatar/{user_id}")
+async def get_avatar(
+    user_id: str,
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+    file_service: FileService = Depends(get_file_service),
+):
+    """Serve a user's profile photo. Any authenticated user may view any
+    other user's avatar — not owner-restricted, same as a display name."""
+    target_user = await auth_service.get_user_by_id(user_id)
+    if not target_user or not target_user.avatar_file_id:
+        raise NotFoundError("Avatar not found")
+    try:
+        file_data, file_info = await file_service.download_file(target_user.avatar_file_id)
+    except (FileNotFoundError, PermissionError):
+        raise NotFoundError("Avatar not found")
+    headers = {"Cache-Control": "public, max-age=31536000, immutable"}
+    return StreamingResponse(
+        file_data,
+        media_type=file_info.content_type or "image/jpeg",
+        headers=headers,
+    )
 
 
 @router.get("/user/{user_id}", response_model=APIResponse[UserResponse])
