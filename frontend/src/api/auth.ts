@@ -18,6 +18,7 @@ export interface User {
   created_at: string;
   updated_at: string;
   last_login_at?: string;
+  avatar_url?: string | null;
 }
 
 /**
@@ -180,6 +181,29 @@ export async function changePassword(request: ChangePasswordRequest): Promise<Re
  */
 export async function changeFullname(request: ChangeFullnameRequest): Promise<User> {
   const response = await apiClient.post<ApiResponse<User>>('/auth/change-fullname', request);
+  return response.data.data;
+}
+
+/**
+ * Upload (or replace) the current user's profile photo
+ * @param blob Cropped image blob (JPEG)
+ * @returns Updated user data
+ */
+export async function uploadAvatar(blob: Blob): Promise<User> {
+  const formData = new FormData();
+  formData.append('file', blob, 'avatar.jpg');
+  const response = await apiClient.post<ApiResponse<User>>('/auth/avatar', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data.data;
+}
+
+/**
+ * Remove the current user's profile photo
+ * @returns Updated user data
+ */
+export async function removeAvatar(): Promise<User> {
+  const response = await apiClient.delete<ApiResponse<User>>('/auth/avatar');
   return response.data.data;
 }
 
