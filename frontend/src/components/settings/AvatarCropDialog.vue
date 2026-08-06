@@ -105,6 +105,13 @@ const displayedHeight = computed(() => naturalHeight.value * baseScale.value * z
 const imageStyle = computed(() => ({
   width: `${displayedWidth.value}px`,
   height: `${displayedHeight.value}px`,
+  // Tailwind's preflight sets `img { max-width: 100%; height: auto }`. Our
+  // explicit `height` above already overrides the stylesheet's `height:
+  // auto`, but `max-width` is a distinct property our inline `width` does
+  // NOT override — it kept silently capping the rendered width at the
+  // viewport's 280px while height kept growing with zoom, stretching the
+  // image. `maxWidth: 'none'` neutralizes that inherited cap.
+  maxWidth: 'none',
   transform: `translate(${offsetX.value}px, ${offsetY.value}px)`,
 }));
 
