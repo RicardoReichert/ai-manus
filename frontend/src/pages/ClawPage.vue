@@ -85,13 +85,13 @@
 
         <!-- Create / choose-a-model panel (no active session, or explicitly starting a new one) -->
         <div v-if="showCreatePanel" class="flex flex-col flex-1 min-h-0 overflow-y-auto">
-          <div class="flex flex-col items-center justify-center flex-1 px-4 py-12 w-full">
-            <div class="w-full rounded-2xl overflow-hidden bg-[#ECECEB] dark:bg-[#231a33] aspect-video mb-8 flex flex-col items-center justify-center gap-4 px-4">
-              <h1 class="text-2xl sm:text-3xl font-bold tracking-tight"><span class="text-[#c0392b]">OpenClaw</span> <span class="text-[var(--text-tertiary)]">×</span> <span class="text-[#3b82f6]">Manus</span></h1>
-              <img :src="openclawColorImage" alt="OpenClaw" class="w-20 h-20 sm:w-24 sm:h-24 object-contain drop-shadow-lg" />
+          <div class="flex flex-col items-center justify-center flex-1 px-4 py-6 sm:py-8 w-full">
+            <div class="w-full rounded-2xl overflow-hidden bg-[#ECECEB] dark:bg-[#231a33] h-28 sm:h-32 mb-5 flex flex-row items-center justify-center gap-3 px-4">
+              <h1 class="text-xl sm:text-2xl font-bold tracking-tight"><span class="text-[#c0392b]">OpenClaw</span> <span class="text-[var(--text-tertiary)]">×</span> <span class="text-[#3b82f6]">Manus</span></h1>
+              <img :src="openclawColorImage" alt="OpenClaw" class="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-lg" />
             </div>
 
-            <div class="w-full grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+            <div class="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
               <div class="flex flex-col gap-3 p-4 rounded-2xl bg-[var(--fill-tsp-white-main)] border border-[var(--border-main)]">
                 <div class="flex items-center gap-2">
                   <div class="w-8 h-8 rounded-lg bg-[var(--fill-tsp-white-main)] border border-[var(--border-main)] flex items-center justify-center">
@@ -511,6 +511,15 @@ const handleWSEvent = (chunk: ClawEvent) => {
   }
 
   if (chunk.type === 'done') {
+    // OpenClaw emits the literal sentinel "NO_REPLY" as the entire message
+    // when the agent deliberately chooses not to reply — never meant to be
+    // shown verbatim, so drop the bubble instead of leaving it on screen.
+    if (streamingAssistantIdx.value >= 0) {
+      const streamed = messages.value[streamingAssistantIdx.value];
+      if (streamed?.type === 'assistant' && (streamed.content as MessageContent).content?.trim() === 'NO_REPLY') {
+        messages.value.splice(streamingAssistantIdx.value, 1);
+      }
+    }
     streamingAssistantIdx.value = -1;
     isWaitingResponse.value = false;
     return;

@@ -220,7 +220,7 @@ class ClawDomainService:
         if not session:
             return []
 
-        db_msgs = await self.claw_repository.get_messages(session_id)
+        db_msgs = [m for m in await self.claw_repository.get_messages(session_id) if not self._is_no_reply(m.content)]
 
         claw_msgs: List[ClawMessage] = []
         try:
@@ -228,6 +228,7 @@ class ClawDomainService:
                 claw_msgs = await self.claw_client.get_history(
                     session.http_base_url, session.id, 200,
                 )
+                claw_msgs = [m for m in claw_msgs if not self._is_no_reply(m.content)]
         except Exception as e:
             logger.warning(f"[claw-history] failed to fetch claw native history: {e}")
 
@@ -235,6 +236,13 @@ class ClawDomainService:
             return db_msgs
 
         return self._merge_histories(db_msgs, claw_msgs)
+
+    @staticmethod
+    def _is_no_reply(content: Optional[str]) -> bool:
+        """True for OpenClaw's literal "NO_REPLY" sentinel — emitted as the
+        entire message when the agent deliberately chooses not to reply.
+        Never meant to be shown or stored verbatim."""
+        return bool(content) and content.strip() == "NO_REPLY"
 
     @staticmethod
     def _normalize_ts(ts: int) -> int:
@@ -363,9 +371,10 @@ class ClawDomainService:
                 await self.claw_repository.append_message(
                     session_id, "attachments", "assistant", attachments=file_attachments,
                 )
-            if assistant_content:
+            joined_content = "".join(assistant_content)
+            if joined_content and not self._is_no_reply(joined_content):
                 await self.claw_repository.append_message(
-                    session_id, "assistant", "".join(assistant_content),
+                    session_id, "assistant", joined_content,
                 )
 
     async def validate_session_for_chat(self, user_id: str, session_id: str) -> ClawSession:
