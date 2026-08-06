@@ -23,6 +23,18 @@ class ClawSessionRepository(Protocol):
         """Get the session whose container authenticates with this API key"""
         ...
 
+    async def get_most_recently_updated(self) -> Optional[ClawSession]:
+        """The single most recently updated session across every user.
+
+        Only meaningful when every session shares one physical container
+        (``settings.claw_address`` set — see ``FixedClawRuntime``): there,
+        no per-session API key can identify which session a proxied LLM
+        call belongs to, so the most recently touched session is the best
+        available signal of "what the operator is currently using". Never
+        consulted when sessions have their own containers (production).
+        """
+        ...
+
     async def create(self, session: ClawSession) -> ClawSession:
         """Create a new session"""
         ...

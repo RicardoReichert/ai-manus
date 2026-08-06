@@ -31,6 +31,11 @@ class ClawSessionRepository:
             return None
         return doc.to_domain()
 
+    async def get_most_recently_updated(self) -> Optional[ClawSession]:
+        """The single most recently updated session across every user"""
+        docs = await ClawSessionDocument.find_all().sort("-updated_at").limit(1).to_list()
+        return docs[0].to_domain() if docs else None
+
     async def create(self, session: ClawSession) -> ClawSession:
         """Create a new session"""
         doc = ClawSessionDocument.from_domain(session)

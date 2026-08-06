@@ -23,6 +23,7 @@ from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.application.services.claw_service import ClawService
+from app.core.config import get_settings
 from app.domain.models.message import LLMMessage, Role, ToolCall
 from app.infrastructure.external.llm.langchain_llm import get_langchain_llm
 from app.infrastructure.external.llm.model_registry import (
@@ -166,22 +167,46 @@ async def _resolve_llm_target(requested_model: Optional[str], api_key: Optional[
     Claw's openclaw.json hardcodes the alias ``manus-proxy/default`` (baked in
     at container build time), so the alias cannot carry the session's choice.
     Resolution order: the model pinned to the session that owns this api_key,
-    then the literal requested id if it happens to name a real registry
-    entry, then the first enabled model. This is what lets switching models
-    (via session restart) take effect without regenerating config.
+    then (only when every session shares one physical container — see below)
+    the most recently updated session, then the literal requested id if it
+    happens to name a real registry entry, then the first enabled model.
+    This is what lets switching models (via session restart) take effect
+    without regenerating config.
 
     Resolving by api_key rather than user_id matters now that a user can
     have several concurrent sessions, each potentially on a different
     model — the api_key IS the session, one-to-one, so it's the only
     correct way to know which session's container is actually calling in.
+
+    That breaks down when ``settings.claw_address`` is set (development's
+    ``FixedClawRuntime``): every session shares the one physical container,
+    which is started once with a single fixed system API key baked into its
+    openclaw.json — never a session's own key — so ``get_by_api_key`` above
+    can never match, and every call would silently fall back to the first
+    enabled model regardless of what was chosen in the UI. In that mode
+    only, once the caller is confirmed to be that fixed system key, fall
+    back to the most recently updated session instead: with one shared
+    container there is no way to attribute a call to a specific session, so
+    "whichever session the operator most recently touched" is the best
+    available signal of intent. Never consulted in production, where each
+    session's own container makes the exact api_key match above authoritative.
     """
     desc = None
+    claw_service = None
 
     if api_key:
         claw_service = await _get_claw_service()
         session = await claw_service.claw_repository.get_by_api_key(api_key)
         if session and session.model_id:
             desc = await resolve_model(session.model_id)
+
+    if desc is None and api_key:
+        settings = get_settings()
+        if settings.claw_address and settings.claw_api_key and api_key == settings.claw_api_key:
+            claw_service = claw_service or await _get_claw_service()
+            session = await claw_service.claw_repository.get_most_recently_updated()
+            if session and session.model_id:
+                desc = await resolve_model(session.model_id)
 
     if desc is None:
         candidate = (requested_model or "").removeprefix("manus-proxy/")
