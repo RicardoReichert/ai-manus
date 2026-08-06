@@ -152,10 +152,14 @@ class UserResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_login_at: Optional[datetime] = None
-    
+    avatar_url: Optional[str] = None
+
     @staticmethod
     def from_domain(user) -> 'UserResponse':
         """Convert user domain model to response schema"""
+        avatar_url = None
+        if getattr(user, 'avatar_file_id', None):
+            avatar_url = f"/api/v1/auth/avatar/{user.id}?v={int(user.updated_at.timestamp())}"
         return UserResponse(
             id=user.id,
             fullname=user.fullname,
@@ -164,7 +168,8 @@ class UserResponse(BaseModel):
             is_active=user.is_active,
             created_at=user.created_at,
             updated_at=user.updated_at,
-            last_login_at=user.last_login_at
+            last_login_at=user.last_login_at,
+            avatar_url=avatar_url,
         )
 
 

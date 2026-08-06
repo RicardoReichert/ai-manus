@@ -5,10 +5,14 @@ test_auth_routes.py.
 """
 import io
 import logging
+from datetime import datetime, UTC
 
 import pytest
 import requests
 from conftest import BASE_URL
+
+from app.domain.models.user import User, UserRole
+from app.interfaces.schemas.auth import UserResponse
 
 logger = logging.getLogger(__name__)
 
@@ -177,3 +181,19 @@ class TestReplaceAvatar:
             f"{BASE_URL}/auth/avatar/{avatar_user['user_id']}", headers=_auth_headers(avatar_user),
         )
         assert response.status_code == 200  # current (second) avatar still serves fine
+
+
+class TestUserResponseAvatarUrl:
+    def test_no_avatar_file_id_gives_null_avatar_url(self):
+        user = User(id="u1", fullname="Test", email="t@example.com", role=UserRole.USER)
+        response = UserResponse.from_domain(user)
+        assert response.avatar_url is None
+
+    def test_avatar_file_id_builds_versioned_relative_url(self):
+        ts = datetime(2026, 1, 1, tzinfo=UTC)
+        user = User(
+            id="u1", fullname="Test", email="t@example.com", role=UserRole.USER,
+            avatar_file_id="file-123", updated_at=ts,
+        )
+        response = UserResponse.from_domain(user)
+        assert response.avatar_url == f"/api/v1/auth/avatar/u1?v={int(ts.timestamp())}"
