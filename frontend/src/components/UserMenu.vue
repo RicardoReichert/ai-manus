@@ -6,9 +6,7 @@
                 class="flex w-[300px] flex-col bg-[var(--background-menu-white)] rounded-[20px] border-[0.5px] border-[var(--border-dark)] shadow-[0px_8px_32px_0px_var(--shadow-XS)]">
                 <div class="flex gap-2 px-4 pt-5 pb-3 w-full">
                     <div class="relative flex items-center justify-center font-bold cursor-pointer flex-shrink-0">
-                        <div class="relative flex items-center justify-center font-bold flex-shrink-0 rounded-full overflow-hidden"
-                            style="width: 48px; height: 48px; font-size: 24px; color: rgba(255, 255, 255, 0.9); background-color: rgb(59, 130, 246);">
-                            {{ avatarLetter }}</div>
+                        <UserAvatar :avatar-url="currentUser?.avatar_url" :fallback-letter="avatarLetter" :size="48" />
                     </div>
                     <div class="flex overflow-hidden flex-col justify-center">
                         <div class="flex gap-1 items-center w-full"><span
@@ -100,6 +98,7 @@ import { useAuth } from '../composables/useAuth';
 import { useSettingsDialog } from '../composables/useSettingsDialog';
 import { getCachedAuthProvider } from '../api/config';
 import { LogOut, User, Settings2, LayoutGrid, CircleHelp, FileText } from 'lucide-vue-next';
+import UserAvatar from './UserAvatar.vue';
 
 const router = useRouter();
 const { t } = useI18n();

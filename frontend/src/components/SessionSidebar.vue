@@ -412,11 +412,7 @@
               class="flex min-w-0 ps-[2px] items-center gap-[8px] clickable cursor-pointer hover:opacity-70 p-[2px] text-[var(--text-primary)] text-sm font-[500]"
               aria-expanded="false" aria-haspopup="dialog">
               <div class="relative flex items-center justify-center font-bold cursor-pointer flex-shrink-0">
-                <div
-                  class="relative flex items-center justify-center font-bold flex-shrink-0 rounded-full overflow-hidden"
-                  style="width: 28px; height: 28px; font-size: 14px; color: rgba(255, 255, 255, 0.9); background-color: rgb(59, 130, 246);">
-                  {{ avatarLetter }}
-                </div>
+                <UserAvatar :avatar-url="currentUser?.avatar_url" :fallback-letter="avatarLetter" :size="28" />
               </div>
               <span v-if="isSessionSidebarShow" class="truncate">
                 {{ currentUser?.fullname || t('Unknown User') }}
@@ -444,6 +440,7 @@ import {
 import SessionItem from './SessionItem.vue';
 import UserMenu from './UserMenu.vue';
 import SearchDialog from './SearchDialog.vue';
+import UserAvatar from './UserAvatar.vue';
 import ManusLogoTextIcon from './icons/ManusLogoTextIcon.vue';
 import ClawIcon from './icons/ClawIcon.vue';
 import { useSessionSidebar } from '../composables/useSessionSidebar';

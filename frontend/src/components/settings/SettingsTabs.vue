@@ -15,6 +15,7 @@ import {
 } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
 import { useSettingsDialog } from '@/composables/useSettingsDialog'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 export type SettingsTabId =
   | 'general'
@@ -171,12 +172,7 @@ defineExpose({ activeTab })
             class="col-start-1 row-start-1 min-w-0 min-h-[36px] flex gap-2 items-center"
           >
             <div class="flex flex-1 gap-[10px] items-center overflow-hidden min-w-0">
-              <div
-                class="relative flex items-center justify-center font-bold flex-shrink-0 rounded-full overflow-hidden"
-                style="width: 28px; height: 28px; font-size: 14px; color: rgba(255, 255, 255, 0.9); background-color: rgb(59, 130, 246);"
-              >
-                {{ avatarLetter }}
-              </div>
+              <UserAvatar :avatar-url="currentUser?.avatar_url" :fallback-letter="avatarLetter" :size="28" />
               <div class="flex min-w-0 flex-1 flex-col justify-center">
                 <span
                   class="truncate text-[14px] font-medium leading-5 tracking-[-0.15px] text-[var(--text-primary)]"

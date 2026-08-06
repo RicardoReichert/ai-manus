@@ -3,12 +3,7 @@
     <div class="space-y-4">
       <div class="flex gap-4 items-center">
         <div class="flex items-center gap-4 flex-1 min-w-0">
-          <div
-            class="relative flex items-center justify-center font-bold flex-shrink-0 rounded-full overflow-hidden"
-            style="width: 64px; height: 64px; font-size: 32px; color: rgba(255, 255, 255, 0.9); background-color: rgb(59, 130, 246);"
-          >
-            {{ avatarLetter }}
-          </div>
+          <UserAvatar :avatar-url="currentUser?.avatar_url" :fallback-letter="avatarLetter" :size="64" />
           <div class="flex-1 min-w-0 space-y-1">
             <div class="text-[var(--text-tertiary)] text-[13px] leading-[18px] flex items-center gap-1">
               {{ t('Full name') }}
@@ -109,6 +104,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '@/composables/useAuth'
 import { useDialog } from '@/composables/useDialog'
+import UserAvatar from '@/components/UserAvatar.vue'
 import { changeFullname } from '@/api/auth'
 import { getCachedAuthProvider } from '@/api/config'
 import { showSuccessToast, showErrorToast } from '@/utils/toast'
