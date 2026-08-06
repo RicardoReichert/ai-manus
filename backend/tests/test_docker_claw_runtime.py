@@ -73,6 +73,30 @@ class TestVolumeMounting:
         mock_docker.volumes.create.assert_called_once_with(name="claw-session-vol-abc")
 
 
+class TestDockerInDocker:
+    @pytest.mark.asyncio
+    async def test_not_privileged_by_default(self, mock_docker):
+        """claw_docker_in_docker defaults to False — existing deployments
+        must not get a privileged container without opting in."""
+        runtime = DockerClawRuntime()
+        await runtime.create("session-abc123", "api-key-1", "claw-session-vol-abc")
+
+        _, kwargs = mock_docker.containers.run.call_args
+        assert "privileged" not in kwargs
+        assert kwargs["environment"]["CLAW_DOCKER_IN_DOCKER"] == "false"
+
+    @pytest.mark.asyncio
+    async def test_privileged_and_env_flag_set_when_opted_in(self, mock_docker, monkeypatch):
+        runtime = DockerClawRuntime()
+        monkeypatch.setattr(runtime.settings, "claw_docker_in_docker", True)
+
+        await runtime.create("session-abc123", "api-key-1", "claw-session-vol-abc")
+
+        _, kwargs = mock_docker.containers.run.call_args
+        assert kwargs["privileged"] is True
+        assert kwargs["environment"]["CLAW_DOCKER_IN_DOCKER"] == "true"
+
+
 class TestCleanupScoping:
     @pytest.mark.asyncio
     async def test_stale_cleanup_targets_only_this_sessions_container_name(self, mock_docker):

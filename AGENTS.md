@@ -130,6 +130,24 @@ only exercisable against a real per-user deployment (`DockerClawRuntime`), not t
 volume-per-session mechanism is likewise a `DockerClawRuntime`-only concern (`FixedClawRuntime`'s
 `create`/`destroy`/`destroy_volume` are all no-ops, matching its single-shared-container design).
 
+**Python and Docker-in-Docker inside Claw**: `claw/Dockerfile` builds on `ubuntu:24.04` (not the
+prebuilt `ghcr.io/openclaw/openclaw` image) with `openclaw` installed via `npm i -g openclaw@<pinned
+version>` — the same way any user installs it outside Docker. Python 3 is installed unconditionally
+(`python3`/`pip`/`venv`), so OpenClaw's own built-in `exec` tool can already run `.py` scripts with no
+plugin changes. Docker Engine (CLI + `dockerd`) is also installed in the image, but only *started* when
+`CLAW_DOCKER_IN_DOCKER=true` (`Settings.claw_docker_in_docker`, default `False`) — `DockerClawRuntime`
+then also sets `privileged=True` on the container, since `dockerd` needs it to create its own nested
+namespaces/cgroups. `entrypoint.sh` starts this nested `dockerd` (storage driver `vfs`) as root, waits
+for it, then drops to the unprivileged `node` user to run `openclaw gateway` itself via `sudo -u node`.
+**This is the container's own isolated daemon at its own `/var/run/docker.sock` — the host's socket is
+never mounted into Claw**, matching OpenClaw's own documented guidance to never give an agent sandbox
+the host's Docker socket. Once enabled, no `manus-claw` plugin change is needed: the existing `exec`
+tool just finds `docker` on `PATH` and uses it. Known limitation: the nested daemon's `/var/lib/docker`
+is not on a persistent volume, so images pulled inside Claw are lost on container restart/TTL expiry —
+acceptable for one-off task execution, revisit with a dedicated volume if that turns out to matter.
+`privileged: true` is a real container-privilege increase (not host-root like a socket mount, but a
+materially larger kernel-facing surface than the default container) — keep it opt-in per deployment.
+
 ### Running Services Individually (Without Docker)
 
 **Backend:**

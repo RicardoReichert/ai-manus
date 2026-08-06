@@ -59,6 +59,7 @@ class DockerClawRuntime:
                 "CLAW_TTL_SECONDS": str(self.settings.claw_ttl_seconds),
                 "MANUS_API_KEY": api_key,
                 "MANUS_API_BASE_URL": manus_api_base_url,
+                "CLAW_DOCKER_IN_DOCKER": "true" if self.settings.claw_docker_in_docker else "false",
             },
             "volumes": {
                 volume_name: {"bind": "/home/node/.openclaw", "mode": "rw"},
@@ -66,6 +67,15 @@ class DockerClawRuntime:
         }
         if claw_network:
             container_config["network"] = claw_network
+        if self.settings.claw_docker_in_docker:
+            # dockerd (started by entrypoint.sh) needs root/privileged to
+            # create its own nested namespaces/cgroups/mounts. This is the
+            # container's own isolated daemon — never the host's socket,
+            # which is deliberately not mounted here or anywhere else this
+            # runtime touches. See claw/entrypoint.sh and the
+            # CLAW_DOCKER_IN_DOCKER setting's docstring in core/config.py for
+            # the full trade-off.
+            container_config["privileged"] = True
 
         container = docker_client.containers.run(**container_config)
         container.reload()

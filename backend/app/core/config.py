@@ -135,6 +135,12 @@ class Settings(BaseSettings):
     claw_ready_timeout: int = 300  # Max seconds to wait for claw container to become ready
     claw_address: str | None = None  # If set, use this fixed host instead of creating Docker containers
     claw_api_key: str | None = None  # Static API key accepted by the LLM proxy (for dev/fixed container)
+    # Opt-in: runs the claw container `privileged` with a nested dockerd, so
+    # the agent's own `exec` tool can call `docker run ...` inside its own
+    # isolated daemon (never the host's socket). Off by default — this is a
+    # real change in container privilege, not something existing deployments
+    # should get silently. See claw/entrypoint.sh for the nested-daemon setup.
+    claw_docker_in_docker: bool = False
     manus_api_base_url: str = "http://backend:8000"  # URL of this backend accessible from claw containers
 
     # Task backend configuration: "local" (in-process asyncio, default)

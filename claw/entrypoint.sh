@@ -109,15 +109,53 @@ EOF
 
 echo "[entrypoint] Configuration written to ${CONFIG_FILE}"
 
-# Start OpenClaw gateway as a child process so this script stays PID 1 and can
-# act as a watchdog: forward shutdown signals and force-kill if the gateway
-# does not exit within the grace period. This guarantees the container always
-# exits when the TTL expires (or on docker stop), even if the Node process
-# hangs during graceful shutdown.
+# The container now starts as root (dockerd needs root, see below), so
+# anything written into the config volume above must be handed back to the
+# `node` user before the gateway (which runs as `node`) can use it.
+chown -R node:node "${CONFIG_DIR}"
+
+# ---------------------------------------------------------------------------
+# Docker-in-Docker: only when explicitly opted in (CLAW_DOCKER_IN_DOCKER=true,
+# set by docker_claw_runtime.py alongside `privileged=True` on the container
+# itself — dockerd cannot start without it). This is the container's OWN
+# nested daemon and socket, at the default /var/run/docker.sock *inside this
+# container* — never the host's. `docker ps` from in here only ever shows
+# containers this nested daemon created.
+# ---------------------------------------------------------------------------
+DOCKERD_PID=""
+if [ "${CLAW_DOCKER_IN_DOCKER}" = "true" ]; then
+    echo "[entrypoint] CLAW_DOCKER_IN_DOCKER=true, starting nested dockerd (storage-driver=vfs)"
+    mkdir -p /var/lib/docker
+    dockerd --storage-driver=vfs > /var/log/dockerd.log 2>&1 &
+    DOCKERD_PID=$!
+
+    DOCKERD_READY=false
+    for _ in $(seq 1 30); do
+        if docker version >/dev/null 2>&1; then
+            DOCKERD_READY=true
+            break
+        fi
+        sleep 1
+    done
+    if [ "${DOCKERD_READY}" = "true" ]; then
+        echo "[entrypoint] Nested dockerd ready (pid ${DOCKERD_PID})"
+    else
+        echo "[entrypoint] Nested dockerd did not become ready within 30s — continuing without it, see /var/log/dockerd.log"
+    fi
+fi
+
+# Start OpenClaw gateway as a child process, running as the unprivileged
+# `node` user (the config file above already has every value it needs
+# baked in as literal strings, so the gateway process itself needs no env
+# vars — only dockerd above needs root). This script stays PID 1 and acts
+# as a watchdog: forward shutdown signals and force-kill if the gateway
+# does not exit within the grace period. This guarantees the container
+# always exits when the TTL expires (or on docker stop), even if the Node
+# process hangs during graceful shutdown.
 CLAW_TTL_SECONDS="${CLAW_TTL_SECONDS:-0}"
 CLAW_SHUTDOWN_GRACE_SECONDS="${CLAW_SHUTDOWN_GRACE_SECONDS:-30}"
 
-openclaw gateway &
+sudo -H -u node openclaw gateway &
 GATEWAY_PID=$!
 
 shutdown_gateway() {
@@ -125,12 +163,18 @@ shutdown_gateway() {
     kill -TERM "${GATEWAY_PID}" 2>/dev/null || true
     for _ in $(seq 1 "${CLAW_SHUTDOWN_GRACE_SECONDS}"); do
         if ! kill -0 "${GATEWAY_PID}" 2>/dev/null; then
-            return 0
+            break
         fi
         sleep 1
     done
-    echo "[entrypoint] Gateway did not stop within ${CLAW_SHUTDOWN_GRACE_SECONDS}s, force killing"
-    kill -KILL "${GATEWAY_PID}" 2>/dev/null || true
+    if kill -0 "${GATEWAY_PID}" 2>/dev/null; then
+        echo "[entrypoint] Gateway did not stop within ${CLAW_SHUTDOWN_GRACE_SECONDS}s, force killing"
+        kill -KILL "${GATEWAY_PID}" 2>/dev/null || true
+    fi
+    if [ -n "${DOCKERD_PID}" ]; then
+        echo "[entrypoint] Shutting down nested dockerd (pid ${DOCKERD_PID})"
+        kill -TERM "${DOCKERD_PID}" 2>/dev/null || true
+    fi
 }
 trap shutdown_gateway TERM INT
 
