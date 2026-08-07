@@ -68,9 +68,12 @@ RUN npm i -g openclaw@2026.7.1-2
 # so all that matters is self-consistency between this Dockerfile's chown
 # below and entrypoint.sh's `sudo -u node`. ubuntu:24.04 already ships a
 # built-in `ubuntu` user at uid 1000, so pick the next uid rather than
-# fight over it.
+# fight over it. Also added to the `docker` group (created by the docker-ce
+# install above) — without this, dockerd's socket is root:docker-owned
+# mode 660, and `node` (the user the agent's exec tool actually runs as)
+# gets "permission denied" even though the daemon itself is up.
 RUN userdel -r ubuntu 2>/dev/null; \
-    useradd -m -d /home/node -s /bin/bash node && \
+    useradd -m -d /home/node -s /bin/bash -G docker node && \
     echo "node ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/node
 
 # Setup manus-claw plugin in stock extensions and openclaw user dir

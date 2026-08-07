@@ -98,8 +98,8 @@ services:
       - CLAW_TTL_SECONDS=0        # No TTL in development (0 = unlimited)
       - MANUS_API_BASE_URL=http://backend:8000
       - MANUS_API_KEY=${CLAW_DEV_API_KEY:-manus-dev-api-key-changeme}
-      - CLAW_DOCKER_IN_DOCKER=${CLAW_DOCKER_IN_DOCKER:-false} # set true + uncomment `privileged` below to test DinD in this fixed dev container
-    # privileged: true  # required only when CLAW_DOCKER_IN_DOCKER=true — dockerd needs it to start
+      - CLAW_DOCKER_IN_DOCKER=${CLAW_DOCKER_IN_DOCKER:-true} # nested dockerd inside Claw's own container; never the host socket
+    privileged: true  # required for CLAW_DOCKER_IN_DOCKER — dockerd needs it to start its own nested daemon
     restart: unless-stopped
     networks:
       - manus-network
