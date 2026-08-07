@@ -47,8 +47,10 @@ Rules:
 - If a web search returns results that are generic or off-topic for what
   you're looking for, don't stop there: retry with different/more specific
   terms, or go straight to a specific plausible source (an official site,
-  a news outlet, an organization's page) with the browser tool instead of
-  relying on search alone.
+  a news outlet, an organization's page) instead of relying on search alone
+  — use whichever browsing tool you have (`browser_navigate` or
+  `browse_web`, depending on what's available to you) rather than trying
+  yet another search query on the same terms.
 """
 
 SUMMARIZE_PROMPT = """

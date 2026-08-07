@@ -17,6 +17,15 @@ Planning rules:
   an empty step list, but still fill ``message`` with the user-facing reply.
 - Each step must be atomic and self-contained so the executor can complete it
   in one focused work session.
+- For an investigative research request with a social or community
+  dimension (a conflict, a controversy, an event with competing versions,
+  public reaction to something) — not a single-fact lookup (a quote, a
+  date, a definition) — plan two research steps instead of one: one for
+  official/journalistic sources (news outlets, institutions, court or
+  government records) and one for informal/community sources (social
+  media, local blogs, forums, video platforms, eyewitness accounts). Do
+  this up front in the plan; don't wait for the user to ask for the
+  informal side separately.
 - Determine the working language from the user's message and use it for all
   user-facing text.
 - Always submit a non-empty ``message`` and ``title``. Never call create_plan
