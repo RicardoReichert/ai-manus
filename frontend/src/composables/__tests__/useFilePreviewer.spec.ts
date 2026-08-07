@@ -1,6 +1,22 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { ref } from 'vue'
+import type { RouteLocationNormalizedLoaded } from 'vue-router'
 import type { FileInfo } from '../../api/file'
+
+/**
+ * The mocked router's `currentRoute` is typed as the real
+ * `RouteLocationNormalizedLoaded` (dozens of required fields: `matched`,
+ * `name`, `fullPath`, `query`, …), but the composable under test only ever
+ * reads `.path` and `.params`. Building a minimal literal and casting it
+ * keeps the tests focused on what actually matters instead of hand-filling
+ * router internals that would just be noise.
+ */
+function mockRoute(
+  path: string,
+  params: Record<string, unknown> = {},
+): RouteLocationNormalizedLoaded {
+  return { path, params } as unknown as RouteLocationNormalizedLoaded
+}
 
 // `useMediaQuery` factory has no outer-scope dependency, so no vi.hoisted
 // juggling is needed here — we wire up its return value below, after the
@@ -24,7 +40,7 @@ vi.mock('../../router', async () => {
     router: {
       currentRoute: ref({
         path: '/chat/session-123',
-        params: { sessionId: 'session-123' } as Record<string, unknown>,
+        params: { sessionId: 'session-123' },
       }),
     },
   }
@@ -55,10 +71,7 @@ describe('useFilePreviewer', () => {
 
   beforeEach(() => {
     mobileRef.value = false
-    router.currentRoute.value = {
-      path: '/chat/session-123',
-      params: { sessionId: 'session-123' },
-    }
+    router.currentRoute.value = mockRoute('/chat/session-123', { sessionId: 'session-123' })
     api.isShow.value = false
     api.fileInfo.value = undefined
     api.viewMode.value = 'center'
@@ -68,29 +81,23 @@ describe('useFilePreviewer', () => {
 
   describe('canUseSideFilePreview', () => {
     it('is false when route path does not start with /chat/', () => {
-      router.currentRoute.value = { path: '/library', params: { sessionId: 'session-123' } }
+      router.currentRoute.value = mockRoute('/library', { sessionId: 'session-123' })
       expect(api.canUseSideFilePreview.value).toBe(false)
     })
 
     it("is false when sessionId param is 'claw'", () => {
-      router.currentRoute.value = { path: '/chat/claw', params: { sessionId: 'claw' } }
+      router.currentRoute.value = mockRoute('/chat/claw', { sessionId: 'claw' })
       expect(api.canUseSideFilePreview.value).toBe(false)
     })
 
     it('is true for a real chat session route when not mobile', () => {
-      router.currentRoute.value = {
-        path: '/chat/session-123',
-        params: { sessionId: 'session-123' },
-      }
+      router.currentRoute.value = mockRoute('/chat/session-123', { sessionId: 'session-123' })
       mobileRef.value = false
       expect(api.canUseSideFilePreview.value).toBe(true)
     })
 
     it('is false when mobile, regardless of route', () => {
-      router.currentRoute.value = {
-        path: '/chat/session-123',
-        params: { sessionId: 'session-123' },
-      }
+      router.currentRoute.value = mockRoute('/chat/session-123', { sessionId: 'session-123' })
       mobileRef.value = true
       expect(api.canUseSideFilePreview.value).toBe(false)
     })
@@ -107,7 +114,7 @@ describe('useFilePreviewer', () => {
     })
 
     it("resolves 'side' to 'center' when side is unavailable", () => {
-      router.currentRoute.value = { path: '/library', params: {} }
+      router.currentRoute.value = mockRoute('/library')
       const file = makeFile()
       api.showFilePreviewer(file, 'side')
       expect(api.viewMode.value).toBe('center')
@@ -123,10 +130,7 @@ describe('useFilePreviewer', () => {
 
   describe('setViewMode / exitFullscreen', () => {
     it("switching to fullscreen from 'side' records the return mode, exitFullscreen restores it", () => {
-      router.currentRoute.value = {
-        path: '/chat/session-123',
-        params: { sessionId: 'session-123' },
-      }
+      router.currentRoute.value = mockRoute('/chat/session-123', { sessionId: 'session-123' })
       mobileRef.value = false
       api.setViewMode('side')
       expect(api.viewMode.value).toBe('side')
@@ -140,24 +144,21 @@ describe('useFilePreviewer', () => {
     })
 
     it('exitFullscreen falls back to center if side became unavailable in between', () => {
-      router.currentRoute.value = {
-        path: '/chat/session-123',
-        params: { sessionId: 'session-123' },
-      }
+      router.currentRoute.value = mockRoute('/chat/session-123', { sessionId: 'session-123' })
       mobileRef.value = false
       api.setViewMode('side')
       api.setViewMode('fullscreen')
       expect(api.fullscreenReturnViewMode.value).toBe('side')
 
       // side becomes unavailable while in fullscreen
-      router.currentRoute.value = { path: '/library', params: {} }
+      router.currentRoute.value = mockRoute('/library')
 
       api.exitFullscreen()
       expect(api.viewMode.value).toBe('center')
     })
 
     it("setViewMode('side') is a no-op when side is unavailable", () => {
-      router.currentRoute.value = { path: '/library', params: {} }
+      router.currentRoute.value = mockRoute('/library')
       api.viewMode.value = 'center'
       api.setViewMode('side')
       expect(api.viewMode.value).toBe('center')
