@@ -8,7 +8,6 @@ import {
   register as apiRegister,
   logout as apiLogout,
   logoutAll as apiLogoutAll,
-  getCurrentUser,
   refreshToken as apiRefreshToken,
   setAuthToken,
   clearAuthToken,

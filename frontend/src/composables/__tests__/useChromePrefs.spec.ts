@@ -48,7 +48,7 @@ describe('useChromePrefs', () => {
   it('setBrowserNotifications(true) when Notification is undefined → sets ref to false and resolves false', async () => {
     // Ensure Notification is not defined
     const originalNotification = globalThis.Notification
-    // @ts-ignore - intentionally removing Notification for this test
+    // @ts-expect-error - intentionally removing Notification for this test
     delete globalThis.Notification
 
     const { browserNotificationsEnabled, setBrowserNotifications } = useChromePrefs()
@@ -65,7 +65,7 @@ describe('useChromePrefs', () => {
 
   it('setBrowserNotifications(true) with Notification.requestPermission returning "granted" → resolves true and sets ref true', async () => {
     const mockRequestPermission = vi.fn().mockResolvedValue('granted')
-    // @ts-ignore
+    // @ts-expect-error - stubbing global Notification with a minimal mock
     globalThis.Notification = { requestPermission: mockRequestPermission }
 
     const { browserNotificationsEnabled, setBrowserNotifications } = useChromePrefs()
@@ -76,13 +76,13 @@ describe('useChromePrefs', () => {
     expect(mockRequestPermission).toHaveBeenCalled()
 
     // Clean up
-    // @ts-ignore
+    // @ts-expect-error - intentionally removing Notification for other tests
     delete globalThis.Notification
   })
 
   it('setBrowserNotifications(true) with Notification.requestPermission returning "denied" → resolves false and ref stays false', async () => {
     const mockRequestPermission = vi.fn().mockResolvedValue('denied')
-    // @ts-ignore
+    // @ts-expect-error - stubbing global Notification with a minimal mock
     globalThis.Notification = { requestPermission: mockRequestPermission }
 
     const { browserNotificationsEnabled, setBrowserNotifications } = useChromePrefs()
@@ -93,12 +93,12 @@ describe('useChromePrefs', () => {
     expect(mockRequestPermission).toHaveBeenCalled()
 
     // Clean up
-    // @ts-ignore
+    // @ts-expect-error - intentionally removing Notification for other tests
     delete globalThis.Notification
   })
 
   it('setBrowserNotifications(false) → sets ref to false and resolves true without touching Notification', async () => {
-    // @ts-ignore
+    // @ts-expect-error - intentionally removing Notification for this test
     delete globalThis.Notification
 
     const { browserNotificationsEnabled, setBrowserNotifications } = useChromePrefs()

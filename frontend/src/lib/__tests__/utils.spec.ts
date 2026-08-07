@@ -11,7 +11,8 @@ describe('cn', () => {
   })
 
   it('drops falsy and nullish entries', () => {
-    expect(cn('a', false && 'b', undefined, null, 'c')).toBe('a c')
+    const off: string | false = false
+    expect(cn('a', off, undefined, null, 'c')).toBe('a c')
   })
 
   it('handles object form with boolean values', () => {
