@@ -83,15 +83,17 @@ describe('slashSuggestion', () => {
     })
 
     it('invokes editor chain and calls item.run() when command is null but editor and range are provided', () => {
-      const itemRun = vi.fn()
-      const deleteRangeRun = vi.fn()
+      const callOrder: string[] = []
+      const itemRun = vi.fn(() => callOrder.push('item-run'))
+      const deleteRangeRun = vi.fn(() => callOrder.push('chain-run'))
+      const deleteRangeMock = vi.fn(function () {
+        return { run: deleteRangeRun }
+      })
       const editor = {
         chain: vi.fn(() => ({
           focus: vi.fn(function () {
             return {
-              deleteRange: vi.fn(function () {
-                return { run: deleteRangeRun }
-              }),
+              deleteRange: deleteRangeMock,
             }
           }),
         })),
@@ -111,6 +113,8 @@ describe('slashSuggestion', () => {
       expect(editor.chain).toHaveBeenCalled()
       expect(deleteRangeRun).toHaveBeenCalled()
       expect(itemRun).toHaveBeenCalled()
+      expect(deleteRangeMock).toHaveBeenCalledWith(range)
+      expect(callOrder).toEqual(['chain-run', 'item-run'])
     })
 
     it('only calls item.run() when command, editor, and range are all null/undefined', () => {
