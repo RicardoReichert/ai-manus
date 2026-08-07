@@ -55,8 +55,18 @@ Rules:
 - Do not change the plan goal or any completed steps.
 - Return only the remaining (uncompleted) steps, starting from the first
   uncompleted step id. Return an empty list if nothing is left to do.
-- Read the step result carefully: if it failed, adjust the remaining steps to
-  recover; if it already covered later steps, drop them.
+- Read the step result carefully, whether it reports success or failure: a
+  step can report success and still not have actually gotten what the plan's
+  goal needs — e.g. a search that came back generic, off-topic, or too thin
+  to answer the user's question. If the step's own result says (in any
+  words) that the information is insufficient, generic, or that a more
+  targeted attempt is needed, do not treat the plan as finished — add a step
+  that retries with a different approach (different search terms, or a
+  direct visit to a specific source) before returning an empty list. Only
+  return an empty list when the finished steps actually satisfy the plan's
+  goal, not merely when the executor stopped.
+- If it failed, adjust the remaining steps to recover; if it already covered
+  later steps, drop them.
 - Keep step descriptions unchanged unless a real change is needed.
 
 Finished step:

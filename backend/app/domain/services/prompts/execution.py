@@ -37,6 +37,18 @@ Rules:
 - Stay within the scope of this step; later steps will be handled separately.
 - When finished, call the `complete_step` tool with the step outcome. Report
   success=false with what went wrong if the step could not be completed.
+- Calling a tool without errors is not the same as completing the step.
+  Before reporting success=true, check whether what you gathered actually
+  answers the step's objective. If a search or lookup came back generic,
+  off-topic, or too thin to be useful, that is the step failing to meet its
+  goal — report success=false and say specifically what's missing, even
+  though the tool call itself "worked". Don't let an error-free tool call
+  stand in for an actually-achieved objective.
+- If a web search returns results that are generic or off-topic for what
+  you're looking for, don't stop there: retry with different/more specific
+  terms, or go straight to a specific plausible source (an official site,
+  a news outlet, an organization's page) with the browser tool instead of
+  relying on search alone.
 """
 
 SUMMARIZE_PROMPT = """

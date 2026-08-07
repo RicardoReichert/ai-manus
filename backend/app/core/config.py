@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     
     # Search engine configuration
     search_provider: str | None = "bing_web"  # "baidu", "baidu_web", "google", "bing", "bing_web", "tavily", "serper", "custom"
+    # Bing market/locale hint (e.g. "pt-BR", "en-US") sent with bing/bing_web
+    # searches. Without it Bing has no language signal at all and can fall
+    # back to matching only the one word it recognizes confidently in a
+    # non-English query, ignoring the rest — see bing_web_search.py.
+    search_market: str = "pt-BR"
     baidu_search_api_key: str | None = None
     bing_search_api_key: str | None = None
     google_search_api_key: str | None = None

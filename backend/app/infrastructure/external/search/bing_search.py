@@ -1,6 +1,7 @@
 from typing import Optional
 import logging
 import httpx
+from app.core.config import get_settings
 from app.domain.models.tool_result import ToolResult
 from app.domain.models.search import SearchResults, SearchResultItem
 from app.domain.external.search import SearchEngine
@@ -32,10 +33,13 @@ class BingSearchEngine(SearchEngine):
             "Ocp-Apim-Subscription-Key": self.api_key,
         }
 
+        # Was hardcoded to en-US regardless of deployment language — same
+        # root cause as bing_web_search.py's missing market signal, just
+        # for the paid API variant. Configurable via settings.search_market.
         params: dict = {
             "q": query,
             "count": "20",
-            "mkt": "en-US",
+            "mkt": get_settings().search_market or "en-US",
             "textDecorations": "false",
             "textFormat": "Raw",
         }
