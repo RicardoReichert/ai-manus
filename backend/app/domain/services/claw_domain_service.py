@@ -402,29 +402,6 @@ class ClawDomainService:
         return await self.claw_client.get_file(session.http_base_url, filename)
 
     # ------------------------------------------------------------------
-    # VNC
-    # ------------------------------------------------------------------
-
-    async def get_vnc_url(self, user_id: str, session_id: str) -> str:
-        """Get the VNC WebSocket URL for a session, ensuring it belongs to
-        the user. Raises ValueError if the session is missing, not owned by
-        ``user_id``, or has no running container yet.
-
-        Mirrors ``get_file``/``validate_session_for_chat``'s two-part check:
-        a session can retain a stale ``container_ip`` (and therefore a
-        ``vnc_url``) after ``_check_expiry`` marks it STOPPED on a failed
-        health check, since only the expiry-timeout branch clears
-        ``container_ip`` — so the status check below is required, not
-        redundant with the ``vnc_url`` check.
-        """
-        session = await self.get_session(user_id, session_id)
-        if not session or not session.vnc_url:
-            raise ValueError("No running claw session found")
-        if session.status != ClawStatus.RUNNING:
-            raise ValueError(f"Claw session is not running (status: {session.status})")
-        return session.vnc_url
-
-    # ------------------------------------------------------------------
     # Operator Terminal
     # ------------------------------------------------------------------
 
@@ -434,7 +411,11 @@ class ClawDomainService:
         """Open a new PTY on the claw instance and return
         ``(terminal_ws_url, terminal_session_id)``.
 
-        Same two-part ownership/running check as ``get_vnc_url``. Raises
+        Mirrors ``get_file``/``validate_session_for_chat``'s two-part check:
+        a session can retain a stale ``container_ip`` after ``_check_expiry``
+        marks it STOPPED on a failed health check, since only the
+        expiry-timeout branch clears ``container_ip`` — so the status check
+        below is required, not redundant with the base-url checks. Raises
         ``ValueError`` if the session is missing/not owned/not running,
         propagates whatever the plugin's ``/terminal/open`` call raises
         (e.g. ``httpx.HTTPStatusError`` on a 502/503 from the plugin — see

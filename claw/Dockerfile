@@ -15,22 +15,6 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------
-# Graphical stack for the opt-in browser GUI (CLAW_BROWSER_GUI=true, see
-# entrypoint.sh): Xvfb, x11vnc, websockify — same packages/versions as
-# sandbox/Dockerfile's identical stack, for consistency across the repo.
-# x11-utils is additional here, for entrypoint.sh's `xdpyinfo` readiness
-# check (sandbox uses supervisord's own restart/priority ordering instead,
-# so it never needed one).
-# ---------------------------------------------------------------------------
-RUN apt-get update && apt-get install -y \
-    xvfb \
-    x11vnc \
-    websockify \
-    x11-utils \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# ---------------------------------------------------------------------------
 # Chromium: OpenClaw's `browser` tool ships playwright-core as a dependency
 # (confirmed via `find /usr/lib/node_modules/openclaw/node_modules -iname
 # '*playwright*'`), but unlike a plain Playwright install it does NOT bundle
@@ -128,11 +112,9 @@ RUN chmod +x /entrypoint.sh
 # enabled. entrypoint.sh itself drops to the `node` user for the actual
 # `openclaw gateway` process — dockerd is the only thing that runs as root.
 
-# Expose manus-claw HTTP server port, OpenClaw gateway port, and the
-# websockify VNC-over-WS endpoint for the opt-in browser GUI.
+# Expose manus-claw HTTP server port and the OpenClaw gateway port.
 EXPOSE 18788
 EXPOSE 18789
-EXPOSE 5901
 
 # Environment variables with defaults
 ENV CLAW_TTL_SECONDS=0
@@ -141,6 +123,5 @@ ENV MANUS_API_BASE_URL=""
 ENV MANUS_API_KEY=""
 ENV OPENCLAW_GATEWAY_TOKEN=""
 ENV CLAW_DOCKER_IN_DOCKER=false
-ENV CLAW_BROWSER_GUI=false
 
 ENTRYPOINT ["/entrypoint.sh"]

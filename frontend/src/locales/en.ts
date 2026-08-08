@@ -199,7 +199,6 @@ export default {
   'live': 'live',
   'Live': 'Live',
   'Close': 'Close',
-  'Screen': 'Screen',
   'Terminal session ended': 'Terminal session ended',
   'Select an application to use': 'Select an application to use',
   'Failed to load file content': 'Failed to load file content',
@@ -284,7 +283,6 @@ export default {
   // Tool names
   'Terminal': 'Terminal',
   'No tool activity yet': 'No tool activity yet',
-  'No agent activity yet': 'No agent activity yet',
   'Done': 'Done',
   'File': 'File',
   'Browser': 'Browser',
@@ -610,6 +608,5 @@ export default {
   'This session’s container stopped. Its memory is preserved — restart to continue.': 'This session’s container stopped. Its memory is preserved — restart to continue.',
 
   // Claw Computer Panel
-  "{name}'s screen": "{name}'s screen",
   'Computer': 'Computer',
 }

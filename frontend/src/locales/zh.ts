@@ -199,7 +199,6 @@ export default {
   'live': '实时',
   'Live': '实时',
   'Close': '关闭',
-  'Screen': '屏幕',
   'Terminal session ended': '终端会话已结束',
   'Select an application to use': '选择要使用的应用',
   'Failed to load file content': '加载文件内容失败',
@@ -283,7 +282,6 @@ export default {
   // Tool names
   'Terminal': '终端',
   'No tool activity yet': '暂无工具活动',
-  'No agent activity yet': '暂无代理活动',
   'Done': '完成',
   'File': '文件',
   'Browser': '浏览器',
@@ -609,6 +607,5 @@ export default {
   'This session’s container stopped. Its memory is preserved — restart to continue.': '此会话的容器已停止。记忆已保留——重启即可继续。',
 
   // Claw Computer Panel
-  "{name}'s screen": "{name} 的屏幕",
   'Computer': '电脑',
 }

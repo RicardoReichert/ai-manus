@@ -1,9 +1,4 @@
-"""Unit tests for ``ClawService.get_vnc_url`` / ``ClawDomainService.get_vnc_url``.
-
-Mirrors the main Manus sandbox's ``AgentService.get_vnc_url`` (see
-``backend/app/application/services/agent_service.py``): builds a
-``ws://<host>:5901`` URL from the session's container address, and never
-returns another user's session.
+"""Unit tests for ``ClawService.open_terminal`` / ``ClawDomainService.open_terminal``.
 
 Pure unit tests — no server, no Mongo, no Docker. Follows the fake-repository
 mocking convention already used in ``test_claw_lifecycle.py`` and
@@ -113,7 +108,7 @@ def _build_domain_service(session: Optional[ClawSession]) -> ClawDomainService:
 
 
 @pytest.mark.asyncio
-async def test_get_vnc_url_returns_ws_url_for_owned_session():
+async def test_open_terminal_returns_ws_url_and_session_id_for_owned_running_session():
     session = _session(container_ip="10.0.0.5")
     domain = _build_domain_service(session)
 
@@ -123,80 +118,6 @@ async def test_get_vnc_url_returns_ws_url_for_owned_session():
     # in CI or locally), which would otherwise flip the session to STOPPED
     # and mask the very case this test is meant to cover.
     with patch.object(ClawDomainService, "_health_check", AsyncMock(return_value=True)):
-        url = await domain.get_vnc_url("user-1", "sess-1")
-
-    assert url == "ws://10.0.0.5:5901"
-
-
-@pytest.mark.asyncio
-async def test_get_vnc_url_via_application_service_matches_documented_signature():
-    """``ClawService.get_vnc_url(session_id, user_id)`` — the exact order
-    Task 5's WS proxy route is expected to call directly."""
-    session = _session(container_ip="10.0.0.5")
-    domain = _build_domain_service(session)
-    service = ClawService(domain)
-
-    with patch.object(ClawDomainService, "_health_check", AsyncMock(return_value=True)):
-        url = await service.get_vnc_url("sess-1", "user-1")
-
-    assert url == "ws://10.0.0.5:5901"
-
-
-@pytest.mark.asyncio
-async def test_get_vnc_url_raises_for_session_not_owned_by_caller():
-    session = _session(session_id="sess-1", user_id="owner", container_ip="10.0.0.5")
-    domain = _build_domain_service(session)
-
-    with pytest.raises(ValueError):
-        await domain.get_vnc_url("someone-else", "sess-1")
-
-
-@pytest.mark.asyncio
-async def test_get_vnc_url_raises_for_missing_session():
-    domain = _build_domain_service(None)
-
-    with pytest.raises(ValueError):
-        await domain.get_vnc_url("user-1", "does-not-exist")
-
-
-@pytest.mark.asyncio
-async def test_get_vnc_url_raises_for_stopped_session_with_stale_container_ip():
-    """The gap the reviewer found: ``_check_expiry`` marks a session
-    STOPPED on a failed health check but only the expiry-timeout branch
-    clears ``container_ip`` — so a session whose container just died can
-    still carry a non-None ``container_ip``/``vnc_url``. Modeled directly
-    (STOPPED status + populated container_ip) rather than through
-    ``_check_expiry``'s health-check path, since that's the exact state it
-    produces and is more direct to construct here."""
-    session = _session(container_ip="10.0.0.5", status=ClawStatus.STOPPED)
-    domain = _build_domain_service(session)
-
-    with pytest.raises(ValueError):
-        await domain.get_vnc_url("user-1", "sess-1")
-
-
-@pytest.mark.asyncio
-async def test_get_vnc_url_raises_when_container_not_yet_provisioned():
-    """A session that exists but has no container_ip yet (still CREATING)
-    has no vnc_url — mirrors http_base_url's same-shaped None case."""
-    session = _session(container_ip=None, status=ClawStatus.CREATING)
-    domain = _build_domain_service(session)
-
-    with pytest.raises(ValueError):
-        await domain.get_vnc_url("user-1", "sess-1")
-
-
-# ----------------------------------------------------------------------
-# open_terminal — carries the identical ownership + RUNNING guard as
-# get_vnc_url above (see ClawDomainService.open_terminal's docstring).
-# ----------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_open_terminal_returns_ws_url_and_session_id_for_owned_running_session():
-    session = _session(container_ip="10.0.0.5")
-    domain = _build_domain_service(session)
-
-    with patch.object(ClawDomainService, "_health_check", AsyncMock(return_value=True)):
         ws_url, terminal_session_id = await domain.open_terminal("user-1", "sess-1")
 
     assert terminal_session_id == "term-session-1"
@@ -205,8 +126,8 @@ async def test_open_terminal_returns_ws_url_and_session_id_for_owned_running_ses
 
 @pytest.mark.asyncio
 async def test_open_terminal_via_application_service_matches_documented_signature():
-    """``ClawService.open_terminal(user_id, session_id, cols, rows)`` —
-    mirrors get_vnc_url's application-service wrapper test above."""
+    """``ClawService.open_terminal(user_id, session_id, cols, rows)`` — the
+    exact order the terminal WS proxy route is expected to call directly."""
     session = _session(container_ip="10.0.0.5")
     domain = _build_domain_service(session)
     service = ClawService(domain)
@@ -229,10 +150,10 @@ async def test_open_terminal_raises_for_session_not_owned_by_caller():
 
 @pytest.mark.asyncio
 async def test_open_terminal_raises_for_stopped_session_with_stale_container_ip():
-    """Same regression get_vnc_url guards against: ``_check_expiry`` marks a
-    session STOPPED on a failed health check but only the expiry-timeout
-    branch clears ``container_ip``, so a session whose container just died
-    can still carry a non-None ``container_ip``/``terminal_ws_base_url``."""
+    """``_check_expiry`` marks a session STOPPED on a failed health check but
+    only the expiry-timeout branch clears ``container_ip``, so a session
+    whose container just died can still carry a non-None
+    ``container_ip``/``terminal_ws_base_url``."""
     session = _session(container_ip="10.0.0.5", status=ClawStatus.STOPPED)
     domain = _build_domain_service(session)
 

@@ -60,7 +60,6 @@ class DockerClawRuntime:
                 "MANUS_API_KEY": api_key,
                 "MANUS_API_BASE_URL": manus_api_base_url,
                 "CLAW_DOCKER_IN_DOCKER": "true" if self.settings.claw_docker_in_docker else "false",
-                "CLAW_BROWSER_GUI": "true" if self.settings.claw_browser_gui else "false",
             },
             "volumes": {
                 volume_name: {"bind": "/home/node/.openclaw", "mode": "rw"},

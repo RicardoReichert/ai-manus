@@ -74,22 +74,6 @@ class ClawSession(BaseModel):
         return None
 
     @property
-    def vnc_url(self) -> Optional[str]:
-        """WebSocket VNC URL for the container's optional graphical stack
-        (only listening when the container was started with
-        ``CLAW_BROWSER_GUI=true``, see Task 2).
-
-        Built from ``container_ip`` exactly like ``http_base_url`` — this
-        also covers the dev shared-container ``FixedClawRuntime`` mode
-        transparently, since its ``create()`` returns its fixed hostname as
-        the instance's ``address``, which ``container_ip`` is set to the
-        same way as for the real per-container Docker runtime.
-        """
-        if self.container_ip:
-            return f"ws://{self.container_ip}:5901"
-        return None
-
-    @property
     def terminal_ws_base_url(self) -> Optional[str]:
         """WebSocket base URL for the manus-claw plugin's Operator Terminal
         endpoint (``ws://<container_ip>:18788/terminal/<terminal_session_id>``,

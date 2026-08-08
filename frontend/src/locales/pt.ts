@@ -199,7 +199,6 @@ export default {
   'live': 'ao vivo',
   'Live': 'Ao vivo',
   'Close': 'Fechar',
-  'Screen': 'Tela',
   'Terminal session ended': 'Sessão do terminal encerrada',
   'Select an application to use': 'Selecione um aplicativo para usar',
   'Failed to load file content': 'Falha ao carregar conteúdo do arquivo',
@@ -284,7 +283,6 @@ export default {
   // Tool names
   'Terminal': 'Terminal',
   'No tool activity yet': 'Ainda nenhuma atividade de ferramenta',
-  'No agent activity yet': 'Ainda nenhuma atividade do agente',
   'Done': 'Concluído',
   'File': 'Arquivo',
   'Browser': 'Navegador',
@@ -610,6 +608,5 @@ export default {
   'This session’s container stopped. Its memory is preserved — restart to continue.': 'O container desta sessão parou. A memória está preservada — reinicie para continuar.',
 
   // Claw Computer Panel
-  "{name}'s screen": "Tela de {name}",
   'Computer': 'Computador',
 }

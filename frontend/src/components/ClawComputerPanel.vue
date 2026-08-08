@@ -1,5 +1,5 @@
 <template>
-  <!-- Trimmed adaptation of ComputerPanel.vue: live-only VNC view, no tool-history timeline -->
+  <!-- Trimmed adaptation of ComputerPanel.vue: Terminal/Tools tabs, no tool-history timeline -->
   <div
     ref="computerPanelRef"
     v-if="presentation === 'sidebar'"
@@ -14,8 +14,6 @@
         presentation="sidebar"
         :sessionId="sessionId"
         :toolLog="toolLog"
-        :agentToolEvent="agentToolEvent"
-        :initialView="pendingInitialView"
         @hide="hidePanel"
         @toggle-presentation="togglePresentation"
       />
@@ -34,8 +32,6 @@
           presentation="dialog"
           :sessionId="sessionId"
           :toolLog="toolLog"
-          :agentToolEvent="agentToolEvent"
-          :initialView="pendingInitialView"
           @hide="hidePanel"
           @toggle-presentation="togglePresentation"
         />
@@ -46,9 +42,9 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import ClawComputerPanelContent, { type ClawComputerViewMode } from './ClawComputerPanelContent.vue'
+import ClawComputerPanelContent from './ClawComputerPanelContent.vue'
 import { useResizeObserver } from '../composables/useResizeObserver'
-import type { ClawEvent, ClawToolLogEntry } from '../api/claw'
+import type { ClawToolLogEntry } from '../api/claw'
 
 export type ComputerPresentation = 'sidebar' | 'dialog'
 
@@ -69,16 +65,9 @@ const sideWidth = computed(() => {
 defineProps<{
   sessionId?: string
   toolLog?: ClawToolLogEntry[]
-  agentToolEvent?: ClawEvent | null
 }>()
 
-// Which tab ClawComputerPanelContent should land on the next time it mounts
-// (it fully unmounts/remounts on hide/show, so this only needs to hold the
-// value long enough to be read once as an initial prop).
-const pendingInitialView = ref<ClawComputerViewMode>('screen')
-
-const showPanel = (initialView?: ClawComputerViewMode) => {
-  pendingInitialView.value = initialView ?? 'screen'
+const showPanel = () => {
   isShow.value = true
 }
 

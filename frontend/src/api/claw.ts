@@ -51,10 +51,8 @@ export interface ClawToolLogEntry {
 }
 
 /**
- * Compact, human-readable one-line summary of a tool call's `args`, shared
- * between the tool-log list (ClawToolLogEntry.argsSummary) and the
- * agent-activity terminal echo (ClawAgentTerminalView) so both render the
- * same "$ <name> <args>" shorthand for a given call.
+ * Compact, human-readable one-line summary of a tool call's `args`, used by
+ * the tool-log list (ClawToolLogEntry.argsSummary).
  */
 export function summarizeToolArgs(args?: Record<string, unknown>): string {
   if (!args || Object.keys(args).length === 0) return '';
@@ -126,16 +124,6 @@ export async function getClawSessionHistory(sessionId: string): Promise<ClawChat
   const response = await apiClient.get<ApiResponse<{ messages: ClawChatMessage[] }>>(`/claw/sessions/${sessionId}/history`);
   return response.data.data.messages;
 }
-
-/**
- * Returns the WS URL for the Claw session's VNC proxy
- * (`/ws/claw/vnc/{sessionId}`), mirroring `getVNCUrl`'s BASE_URL-derived
- * construction in agent.ts.
- */
-export const getClawVncUrl = (sessionId: string): string => {
-  const wsBase = BASE_URL.replace(/^http/, 'ws');
-  return `${wsBase}/ws/claw/vnc/${sessionId}`;
-};
 
 // ---- WebSocket connection ----
 

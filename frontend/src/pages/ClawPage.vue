@@ -266,7 +266,6 @@
       ref="clawComputerPanel"
       :sessionId="activeSession.id"
       :toolLog="toolLog"
-      :agentToolEvent="agentToolEvent"
     />
   </SimpleBar>
 </template>
@@ -310,10 +309,6 @@ const messages = ref<Message[]>([]);
 // mounting/auto-open are handled elsewhere (see ClawComputerPanelContent.vue
 // and Task 13) — this page only owns the reactive data and the append logic.
 const toolLog = ref<ClawToolLogEntry[]>([]);
-// Latest raw 'tool' ClawEvent, re-assigned to a fresh object on every chunk
-// (even within the same toolCallId) so ClawAgentTerminalView's watcher fires
-// on every start/update/result frame — feeds the live "Agent" terminal echo.
-const agentToolEvent = ref<ClawEvent | null>(null);
 const inputMessage = ref('');
 const isWaitingResponse = ref(false);
 const follow = ref(true);
@@ -585,15 +580,10 @@ const toggleComputerPanel = () => {
 
 const handleToolEvent = (chunk: ClawEvent) => {
   if (!clawComputerPanel.value?.isShow) {
-    // First tool activity of the session opens the panel already on the
-    // "Agent" tab, so the user lands on the live command echo instead of a
-    // blank/inactive Screen view — see the plan's auto-open + auto-switch note.
-    clawComputerPanel.value?.showPanel('agent');
+    // First tool activity of the session opens the panel, landing on its
+    // default tab (Tools — the live call log).
+    clawComputerPanel.value?.showPanel();
   }
-
-  // Re-assign to a new object so ClawAgentTerminalView's watcher fires on
-  // every phase (start/update/result), even repeats for the same toolCallId.
-  agentToolEvent.value = { ...chunk };
 
   const id = chunk.toolCallId || `${chunk.name || 'tool'}-${Date.now()}`;
   const existing = toolLog.value.find((e) => e.id === id);
