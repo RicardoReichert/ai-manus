@@ -42,22 +42,22 @@
       </div>
 
       <div v-if="hasDetails(entry) && isExpanded(entry.id)" class="flex flex-col gap-[8px] px-[10px] pb-[10px]">
-        <div v-if="entry.argsText">
+        <div v-if="hasArgs(entry)">
           <div class="mb-[4px] text-[11px] font-[500] text-[var(--text-tertiary)]">{{ t('Arguments') }}</div>
-          <div class="relative">
-            <pre class="rounded-lg bg-[var(--background-gray-main)] p-2.5 pe-9 text-[11px] font-mono text-[var(--text-secondary)] overflow-x-auto whitespace-pre-wrap break-all max-h-[240px] overflow-y-auto">{{ entry.argsText }}</pre>
-            <ChatMessageCopyButton :text="entry.argsText" button-class="absolute top-1 end-1" />
+          <div class="relative rounded-lg bg-[var(--background-gray-main)] p-2.5 pe-9 max-h-[240px] overflow-y-auto overflow-x-hidden">
+            <ClawValueView :value="entry.args" />
+            <ChatMessageCopyButton :text="stringifyToolValue(entry.args)" button-class="absolute top-1 end-1" />
           </div>
         </div>
-        <div v-if="entry.resultText">
+        <div v-if="hasResult(entry)">
           <div
             class="mb-[4px] text-[11px] font-[500]"
             :class="entry.status === 'error' ? 'text-[var(--function-error)]' : 'text-[var(--text-tertiary)]'">
             {{ entry.status === 'error' ? t('Error') : t('Result') }}
           </div>
-          <div class="relative">
-            <pre class="rounded-lg bg-[var(--background-gray-main)] p-2.5 pe-9 text-[11px] font-mono text-[var(--text-secondary)] overflow-x-auto whitespace-pre-wrap break-all max-h-[240px] overflow-y-auto">{{ entry.resultText }}</pre>
-            <ChatMessageCopyButton :text="entry.resultText" button-class="absolute top-1 end-1" />
+          <div class="relative rounded-lg bg-[var(--background-gray-main)] p-2.5 pe-9 max-h-[240px] overflow-y-auto overflow-x-hidden">
+            <ClawValueView :value="entry.result" />
+            <ChatMessageCopyButton :text="stringifyToolValue(entry.result)" button-class="absolute top-1 end-1" />
           </div>
         </div>
       </div>
@@ -69,8 +69,9 @@
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ChevronDown } from 'lucide-vue-next';
-import type { ClawToolLogEntry } from '@/api/claw';
+import { stringifyToolValue, type ClawToolLogEntry } from '@/api/claw';
 import ChatMessageCopyButton from './ChatMessageCopyButton.vue';
+import ClawValueView from './ClawValueView.vue';
 
 withDefaults(defineProps<{
   toolLog: ClawToolLogEntry[];
@@ -82,7 +83,9 @@ const { t } = useI18n();
 
 const expandedIds = ref<Set<string>>(new Set());
 
-const hasDetails = (entry: ClawToolLogEntry) => !!(entry.argsText || entry.resultText);
+const hasResult = (entry: ClawToolLogEntry) => entry.result !== undefined && entry.result !== '';
+const hasArgs = (entry: ClawToolLogEntry) => !!entry.args && Object.keys(entry.args).length > 0;
+const hasDetails = (entry: ClawToolLogEntry) => hasArgs(entry) || hasResult(entry);
 const isExpanded = (id: string) => expandedIds.value.has(id);
 const toggle = (id: string) => {
   const next = new Set(expandedIds.value);

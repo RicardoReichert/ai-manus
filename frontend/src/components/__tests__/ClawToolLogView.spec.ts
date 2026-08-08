@@ -74,7 +74,7 @@ describe('ClawToolLogView', () => {
     expect(rows[0].findAll('div').some((d) => d.classes().includes('text-[var(--text-secondary)]'))).toBe(false)
   })
 
-  it('entries without argsText/resultText render no chevron and cannot be expanded', () => {
+  it('entries without args/result render no chevron and cannot be expanded', () => {
     const wrapper = mount(ClawToolLogView, {
       global: { plugins: [i18n] },
       props: { toolLog: [entry({ id: 'a' })] },
@@ -92,8 +92,8 @@ describe('ClawToolLogView', () => {
         toolLog: [entry({
           id: 'a',
           status: 'success',
-          argsText: '{\n  "command": "ls -la"\n}',
-          resultText: 'file1.txt\nfile2.txt',
+          args: { command: 'ls -la' },
+          result: 'file1.txt\nfile2.txt',
         })],
       },
     })
@@ -119,7 +119,7 @@ describe('ClawToolLogView', () => {
     const wrapper = mount(ClawToolLogView, {
       global: { plugins: [i18n] },
       props: {
-        toolLog: [entry({ id: 'a', status: 'error', resultText: 'boom: command failed' })],
+        toolLog: [entry({ id: 'a', status: 'error', result: 'boom: command failed' })],
       },
     })
 
@@ -128,6 +128,30 @@ describe('ClawToolLogView', () => {
     expect(wrapper.text()).toContain('Error')
     expect(wrapper.text()).not.toContain('Result')
     expect(wrapper.text()).toContain('boom: command failed')
+  })
+
+  it('renders an object result as key/value rows, not a raw JSON string', async () => {
+    const wrapper = mount(ClawToolLogView, {
+      global: { plugins: [i18n] },
+      props: {
+        toolLog: [entry({
+          id: 'a',
+          status: 'success',
+          result: { exit_code: 0, stdout: 'ok', nested: { bytes: 12 } },
+        })],
+      },
+    })
+
+    await wrapper.find('[role="button"]').trigger('click')
+
+    // Key labels rendered individually (structured rows), not as JSON syntax.
+    expect(wrapper.text()).toContain('exit_code')
+    expect(wrapper.text()).toContain('stdout')
+    expect(wrapper.text()).toContain('ok')
+    expect(wrapper.text()).toContain('nested')
+    expect(wrapper.text()).toContain('bytes')
+    expect(wrapper.text()).not.toContain('{"exit_code"')
+    expect(wrapper.text()).not.toContain('{\n')
   })
 
   it('maps status to the expected dot color class', () => {

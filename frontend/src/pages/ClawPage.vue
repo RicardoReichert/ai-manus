@@ -286,7 +286,7 @@ import { useFilePreviewer } from '../composables/useFilePreviewer';
 import { useDialog } from '../composables/useDialog';
 import {
   listClawSessions, createClawSession, getClawSession, restartClawSession, deleteClawSession,
-  getClawSessionHistory, ClawWebSocket, summarizeToolArgs, stringifyToolValue,
+  getClawSessionHistory, ClawWebSocket, summarizeToolArgs,
   type ClawSession, type ClawStatus, type ClawEvent, type ClawToolLogEntry,
 } from '../api/claw';
 import { getAvailableModels, type ModelDescriptor } from '../api/model';
@@ -596,17 +596,16 @@ const handleToolEvent = (chunk: ClawEvent) => {
   const existing = toolLog.value.find((e) => e.id === id);
 
   if (chunk.phase === 'result') {
-    const resultText = stringifyToolValue(chunk.result);
     if (existing) {
       existing.status = chunk.isError ? 'error' : 'success';
-      if (resultText) existing.resultText = resultText;
+      if (chunk.result !== undefined) existing.result = chunk.result;
     } else {
       toolLog.value.push({
         id,
         name: chunk.name || 'tool',
         argsSummary: summarizeToolArgs(chunk.args),
-        argsText: chunk.args ? stringifyToolValue(chunk.args) : undefined,
-        resultText: resultText || undefined,
+        args: chunk.args,
+        result: chunk.result,
         status: chunk.isError ? 'error' : 'success',
         timestamp: Math.floor(Date.now() / 1000),
       });
@@ -617,12 +616,12 @@ const handleToolEvent = (chunk: ClawEvent) => {
   if (existing) {
     if (chunk.args) {
       existing.argsSummary = summarizeToolArgs(chunk.args);
-      existing.argsText = stringifyToolValue(chunk.args);
+      existing.args = chunk.args;
     }
     // 'update' phase streaming output preview — overwritten by the final
     // 'result' phase above once the call completes.
     if (chunk.phase === 'update' && chunk.partialResult !== undefined) {
-      existing.resultText = stringifyToolValue(chunk.partialResult);
+      existing.result = chunk.partialResult;
     }
     return;
   }
@@ -631,7 +630,7 @@ const handleToolEvent = (chunk: ClawEvent) => {
     id,
     name: chunk.name || 'tool',
     argsSummary: summarizeToolArgs(chunk.args),
-    argsText: chunk.args ? stringifyToolValue(chunk.args) : undefined,
+    args: chunk.args,
     status: 'running',
     timestamp: Math.floor(Date.now() / 1000),
   });

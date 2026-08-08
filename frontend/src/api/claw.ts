@@ -48,10 +48,12 @@ export interface ClawToolLogEntry {
   argsSummary: string;
   status: 'running' | 'success' | 'error';
   timestamp: number;
-  /** Full (untruncated) pretty-printed args, for the row's expanded detail view. */
-  argsText?: string;
-  /** Full (untruncated) pretty-printed result/output, once phase 'result' arrives. */
-  resultText?: string;
+  /** Raw args, for the row's expanded detail view (rendered graphically by
+   * ClawValueView, not as a JSON blob). */
+  args?: Record<string, unknown>;
+  /** Raw result/output (or the latest streamed partialResult before the
+   * final 'result' phase arrives), for the row's expanded detail view. */
+  result?: unknown;
 }
 
 /**
