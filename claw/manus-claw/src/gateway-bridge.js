@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
+// Bounds for _bufferTerminalEvent's pre-attach terminal.data/terminal.exit
+// buffer (see GatewayBridge doc comment below for why it exists).
+const TERMINAL_BUFFER_MAX_EVENTS = 500;
+const TERMINAL_BUFFER_MAX_BYTES = 64 * 1024; // 64 KiB of pre-attach PTY output
+const TERMINAL_BUFFER_TTL_MS = 30000; // abandon an unattached terminal.open after 30s
+
 /**
  * GatewayBridge connects to OpenClaw's local gateway and provides
  * a simple send/receive interface for the HTTP server.
@@ -22,6 +28,13 @@ import { randomUUID } from 'node:crypto';
  * connection to the gateway (see gateway-client.js), every terminal session
  * opened via that connection delivers its events on the same message stream,
  * disambiguated by payload.sessionId — see registerTerminalHandler().
+ *
+ * The PTY starts running the instant terminal.open's RPC resolves, which is
+ * strictly before the caller's WS client has upgraded and called
+ * registerTerminalHandler() — anything the shell prints in that gap (e.g.
+ * its startup banner/first prompt) would otherwise be lost. Events that
+ * arrive for a sessionId with no registered handler yet are buffered (see
+ * _bufferTerminalEvent) and replayed in order the moment a handler attaches.
  */
 export class GatewayBridge {
   constructor({ agentId, logger }) {
@@ -38,6 +51,10 @@ export class GatewayBridge {
     this._runIdMap = new Map();
     // Map of terminal sessionId -> handler object ({ onData, onExit })
     this._terminalHandlers = new Map();
+    // Map of terminal sessionId -> { events: [{event, payload}], bytes, timer }
+    // for terminal.data/terminal.exit events that arrived before a WS client
+    // attached (see _bufferTerminalEvent).
+    this._terminalBuffers = new Map();
 
     this._initialized = false;
   }
@@ -216,7 +233,14 @@ export class GatewayBridge {
   _handleTerminalEvent(event, payload) {
     if (!payload || !payload.sessionId) return;
     const handler = this._terminalHandlers.get(payload.sessionId);
-    if (!handler) return;
+
+    if (!handler) {
+      // No WS client attached yet (still between terminal.open resolving and
+      // the WS upgrade completing, or a client that never showed up at all)
+      // — buffer so nothing the PTY prints in that gap is lost.
+      this._bufferTerminalEvent(payload.sessionId, event, payload);
+      return;
+    }
 
     if (event === 'terminal.data') {
       handler.onData?.(payload);
@@ -230,8 +254,62 @@ export class GatewayBridge {
     }
   }
 
+  /**
+   * Buffers a terminal.data/terminal.exit event for a session that has no
+   * WS handler registered yet. Bounded by both event count and total
+   * buffered output bytes (whichever hits first), oldest-first trim, so an
+   * abandoned terminal.open (client that never connects) can't grow this
+   * without bound. Also self-expires after TERMINAL_BUFFER_TTL_MS: if still
+   * unattached by then, the buffer is dropped and the orphaned PTY is
+   * closed on the gateway side too.
+   */
+  _bufferTerminalEvent(sessionId, event, payload) {
+    let buf = this._terminalBuffers.get(sessionId);
+    if (!buf) {
+      buf = { events: [], bytes: 0, timer: null };
+      buf.timer = setTimeout(() => {
+        this.logger?.warn?.(`[bridge] terminal ${sessionId} buffer expired with no WS attach after ${TERMINAL_BUFFER_TTL_MS}ms, closing`);
+        this._terminalBuffers.delete(sessionId);
+        this.closeTerminal(sessionId).catch(() => {});
+      }, TERMINAL_BUFFER_TTL_MS);
+      buf.timer.unref?.();
+      this._terminalBuffers.set(sessionId, buf);
+    }
+
+    buf.events.push({ event, payload });
+    if (event === 'terminal.data' && typeof payload.data === 'string') {
+      buf.bytes += payload.data.length;
+    }
+
+    while (buf.events.length > TERMINAL_BUFFER_MAX_EVENTS || buf.bytes > TERMINAL_BUFFER_MAX_BYTES) {
+      const dropped = buf.events.shift();
+      if (!dropped) break;
+      if (dropped.event === 'terminal.data' && typeof dropped.payload.data === 'string') {
+        buf.bytes -= dropped.payload.data.length;
+      }
+    }
+
+    if (event === 'terminal.exit' && buf.timer) {
+      // Nothing more will ever arrive for this session — no need to keep
+      // ticking toward the abandoned-buffer timeout.
+      clearTimeout(buf.timer);
+      buf.timer = null;
+    }
+  }
+
   registerTerminalHandler(sessionId, handlers) {
     this._terminalHandlers.set(sessionId, handlers);
+
+    const buf = this._terminalBuffers.get(sessionId);
+    if (buf) {
+      if (buf.timer) clearTimeout(buf.timer);
+      this._terminalBuffers.delete(sessionId);
+      for (const { event, payload } of buf.events) {
+        if (event === 'terminal.data') handlers.onData?.(payload);
+        else if (event === 'terminal.exit') handlers.onExit?.(payload);
+      }
+    }
+
     return () => this._terminalHandlers.delete(sessionId);
   }
 
@@ -368,6 +446,10 @@ export class GatewayBridge {
     for (const [sessionId, handler] of [...this._terminalHandlers.entries()]) {
       handler.onExit?.({ sessionId, exitCode: null, signal: null, reason: 'disconnected' });
       this._terminalHandlers.delete(sessionId);
+    }
+    for (const [sessionId, buf] of [...this._terminalBuffers.entries()]) {
+      if (buf.timer) clearTimeout(buf.timer);
+      this._terminalBuffers.delete(sessionId);
     }
   }
 }
