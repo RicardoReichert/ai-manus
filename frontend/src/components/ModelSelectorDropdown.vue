@@ -12,7 +12,7 @@
       </span>
       <span
         v-if="isLocalModel"
-        class="text-[10px] font-semibold text-blue-500 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded shrink-0"
+        class="text-[10px] leading-none font-semibold text-blue-500 bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 rounded shrink-0"
       >
         {{ t('Local') }}
       </span>
