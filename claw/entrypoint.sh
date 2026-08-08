@@ -27,6 +27,17 @@ MANUS_BASE="${MANUS_BASE%/}"
 echo "[entrypoint] Gateway token: ${OPENCLAW_GATEWAY_TOKEN}"
 echo "[entrypoint] Manus API base URL: ${MANUS_BASE}/v1"
 
+# CLAW_BROWSER_GUI controls whether the browser tool renders headless or
+# into the Xvfb display started below, and gets baked into openclaw.json as
+# a real JSON boolean (same technique as CLAW_DOCKER_IN_DOCKER's block
+# further down, which only guards *whether* dockerd starts, not any JSON
+# value — here the flag also selects between two JSON literals).
+if [ "${CLAW_BROWSER_GUI}" = "true" ]; then
+    BROWSER_HEADLESS="false"
+else
+    BROWSER_HEADLESS="true"
+fi
+
 # Write openclaw.json configuration
 cat > "${CONFIG_FILE}" << EOF
 {
@@ -45,6 +56,13 @@ cat > "${CONFIG_FILE}" << EOF
       "maxConcurrent": 4
     }
   },
+  "browser": {
+    "enabled": true,
+    "headless": ${BROWSER_HEADLESS}
+  },
+  "tools": {
+    "alsoAllow": ["browser"]
+  },
   "gateway": {
     "port": 18789,
     "mode": "local",
@@ -52,6 +70,9 @@ cat > "${CONFIG_FILE}" << EOF
     "auth": {
       "mode": "token",
       "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    },
+    "terminal": {
+      "enabled": true
     }
   },
   "plugins": {
@@ -149,6 +170,50 @@ if [ "${CLAW_DOCKER_IN_DOCKER}" = "true" ]; then
     fi
 fi
 
+# ---------------------------------------------------------------------------
+# Browser GUI: only when explicitly opted in (CLAW_BROWSER_GUI=true, set by
+# docker_claw_runtime.py). Unlike CLAW_DOCKER_IN_DOCKER this needs no
+# container privileges — Xvfb/x11vnc/websockify are plain userspace
+# processes. Starts a virtual display, a VNC server pointed at it, and a
+# websockify bridge so the frontend can view it over WebSocket on 5901.
+# openclaw.json's browser.headless above already reflects this same flag;
+# DISPLAY is exported below so any browser process OpenClaw's `browser`
+# tool launches renders into this Xvfb display instead of failing to find
+# a display or falling back to headless.
+# ---------------------------------------------------------------------------
+XVFB_PID=""
+X11VNC_PID=""
+WEBSOCKIFY_PID=""
+if [ "${CLAW_BROWSER_GUI}" = "true" ]; then
+    echo "[entrypoint] CLAW_BROWSER_GUI=true, starting Xvfb+x11vnc+websockify"
+    Xvfb :1 -screen 0 1280x1024x24 &
+    XVFB_PID=$!
+
+    XVFB_READY=false
+    for _ in $(seq 1 30); do
+        if xdpyinfo -display :1 >/dev/null 2>&1; then
+            XVFB_READY=true
+            break
+        fi
+        sleep 1
+    done
+    if [ "${XVFB_READY}" = "true" ]; then
+        echo "[entrypoint] Xvfb ready on :1 (pid ${XVFB_PID})"
+    else
+        echo "[entrypoint] Xvfb did not become ready within 30s — continuing anyway"
+    fi
+
+    x11vnc -display :1 -nopw -shared -listen 0.0.0.0 -forever -rfbport 5900 &
+    X11VNC_PID=$!
+    echo "[entrypoint] x11vnc listening on 5900 (pid ${X11VNC_PID})"
+
+    websockify 0.0.0.0:5901 localhost:5900 &
+    WEBSOCKIFY_PID=$!
+    echo "[entrypoint] websockify listening on 5901 (pid ${WEBSOCKIFY_PID})"
+
+    export DISPLAY=:1
+fi
+
 # Start OpenClaw gateway as a child process, running as the unprivileged
 # `node` user (the config file above already has every value it needs
 # baked in as literal strings, so the gateway process itself needs no env
@@ -179,6 +244,18 @@ shutdown_gateway() {
     if [ -n "${DOCKERD_PID}" ]; then
         echo "[entrypoint] Shutting down nested dockerd (pid ${DOCKERD_PID})"
         kill -TERM "${DOCKERD_PID}" 2>/dev/null || true
+    fi
+    if [ -n "${WEBSOCKIFY_PID}" ]; then
+        echo "[entrypoint] Shutting down websockify (pid ${WEBSOCKIFY_PID})"
+        kill -TERM "${WEBSOCKIFY_PID}" 2>/dev/null || true
+    fi
+    if [ -n "${X11VNC_PID}" ]; then
+        echo "[entrypoint] Shutting down x11vnc (pid ${X11VNC_PID})"
+        kill -TERM "${X11VNC_PID}" 2>/dev/null || true
+    fi
+    if [ -n "${XVFB_PID}" ]; then
+        echo "[entrypoint] Shutting down Xvfb (pid ${XVFB_PID})"
+        kill -TERM "${XVFB_PID}" 2>/dev/null || true
     fi
 }
 trap shutdown_gateway TERM INT

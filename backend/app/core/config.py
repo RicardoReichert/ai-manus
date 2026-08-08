@@ -146,6 +146,13 @@ class Settings(BaseSettings):
     # real change in container privilege, not something existing deployments
     # should get silently. See claw/entrypoint.sh for the nested-daemon setup.
     claw_docker_in_docker: bool = False
+    # Opt-in: runs Xvfb+x11vnc+websockify inside the claw container so its
+    # OpenClaw `browser` tool renders into a real display instead of
+    # headless, viewable live over VNC (websockify on port 5901). Off by
+    # default — most deployments don't need a graphical browser view. Unlike
+    # claw_docker_in_docker, this needs no extra container privileges. See
+    # claw/entrypoint.sh for the Xvfb/x11vnc/websockify setup.
+    claw_browser_gui: bool = False
     manus_api_base_url: str = "http://backend:8000"  # URL of this backend accessible from claw containers
 
     # Task backend configuration: "local" (in-process asyncio, default)
