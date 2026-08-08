@@ -8,7 +8,7 @@ from app.infrastructure.models.memory_serialization import deserialize_memory, s
 from app.domain.models.session import Session, SessionStatus, TaskMode
 from app.domain.models.file import FileInfo
 from app.domain.models.user import User, UserRole
-from app.domain.models.claw import ClawSession, ClawStatus, ClawMessage
+from app.domain.models.claw import ClawSession, ClawStatus, ClawMessage, ClawToolEvent
 from app.domain.models.project import Project
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
@@ -249,6 +249,7 @@ class ClawSessionDocument(BaseDocument[ClawSession], id_field="claw_session_id",
     error_message: Optional[str] = None
     expires_at: Optional[datetime] = None
     messages: List[ClawMessage] = []
+    tool_events: List[ClawToolEvent] = []
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_active_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

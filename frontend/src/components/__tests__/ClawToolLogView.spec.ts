@@ -85,12 +85,13 @@ describe('ClawToolLogView', () => {
     expect(wrapper.text()).not.toContain('Result')
   })
 
-  it('clicking a row with details expands Arguments/Result sections, collapsed by default', async () => {
+  it('clicking a row with details expands its detail view, collapsed by default', async () => {
     const wrapper = mount(ClawToolLogView, {
       global: { plugins: [i18n] },
       props: {
         toolLog: [entry({
           id: 'a',
+          name: 'custom_tool_xyz', // unrecognized name -> generic kind (Arguments/Result labels)
           status: 'success',
           args: { command: 'ls -la' },
           result: 'file1.txt\nfile2.txt',
@@ -113,6 +114,40 @@ describe('ClawToolLogView', () => {
     // Clicking again collapses it back.
     await wrapper.find('[role="button"]').trigger('click')
     expect(wrapper.text()).not.toContain('file1.txt')
+  })
+
+  it('renders a shell-kind entry as a command line + output, not generic Arguments/Result', async () => {
+    const wrapper = mount(ClawToolLogView, {
+      global: { plugins: [i18n] },
+      props: {
+        toolLog: [entry({
+          id: 'a',
+          name: 'shell_exec',
+          status: 'success',
+          args: { command: 'ls -la' },
+          result: 'file1.txt',
+        })],
+      },
+    })
+
+    await wrapper.find('[role="button"]').trigger('click')
+
+    expect(wrapper.text()).toContain('ls -la')
+    expect(wrapper.text()).toContain('file1.txt')
+    expect(wrapper.text()).not.toContain('Arguments')
+  })
+
+  it('shows a truncation notice when the entry is marked truncated', async () => {
+    const wrapper = mount(ClawToolLogView, {
+      global: { plugins: [i18n] },
+      props: {
+        toolLog: [entry({ id: 'a', result: 'partial output...', truncated: true })],
+      },
+    })
+
+    await wrapper.find('[role="button"]').trigger('click')
+
+    expect(wrapper.text()).toContain('Output truncated')
   })
 
   it('labels the result section "Error" (not "Result") and colors it for an errored entry', async () => {
@@ -166,7 +201,7 @@ describe('ClawToolLogView', () => {
       },
     })
 
-    const dots = wrapper.findAll('span.h-\\[8px\\]')
+    const dots = wrapper.findAll('span.h-\\[6px\\]')
     expect(dots).toHaveLength(3)
     expect(dots[0].classes()).toContain('bg-[var(--function-warning)]')
     expect(dots[0].classes()).toContain('animate-pulse')

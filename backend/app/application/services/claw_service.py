@@ -3,7 +3,7 @@ import asyncio
 from collections import defaultdict
 from typing import Optional, List
 
-from app.domain.models.claw import ClawSession, ClawMessage, ClawStatus
+from app.domain.models.claw import ClawSession, ClawMessage, ClawStatus, ClawToolEvent
 from app.domain.services.claw_domain_service import ClawDomainService
 from app.core.config import get_settings
 
@@ -74,6 +74,9 @@ class ClawService:
 
     async def get_history(self, user_id: str, session_id: str) -> List[ClawMessage]:
         return await self.domain.get_history(user_id, session_id)
+
+    async def get_tool_events(self, user_id: str, session_id: str) -> List[ClawToolEvent]:
+        return await self.domain.get_tool_events(user_id, session_id)
 
     async def delete_session(self, user_id: str, session_id: str) -> bool:
         return await self.domain.delete_session(user_id, session_id)

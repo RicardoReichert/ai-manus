@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Any, Optional, List
 from datetime import datetime, UTC
 from pydantic import BaseModel, Field
 from enum import Enum
@@ -19,6 +19,26 @@ class ClawMessage(BaseModel):
     content: str = ""
     timestamp: int  # Unix timestamp (seconds)
     attachments: Optional[List[ClawAttachment]] = None
+
+
+class ClawToolEvent(BaseModel):
+    """A single completed tool call in a Claw session, persisted so the
+    Computer panel's Tools tab can restore its history across reloads and
+    container restarts — mirrors ClawMessage's persistence role but for
+    structured tool-call data instead of chat text.
+
+    Only ever written once a call reaches its terminal 'result' phase (see
+    ClawDomainService.process_chat_stream) — in-flight/never-completed
+    calls are not persisted, matching how in-flight assistant text isn't
+    persisted until the stream finishes either.
+    """
+    tool_call_id: str
+    name: str
+    args: Optional[dict] = None
+    result: Optional[Any] = None
+    is_error: bool = False
+    truncated: bool = False
+    timestamp: int  # Unix timestamp (seconds), same convention as ClawMessage.timestamp
 
 
 class ClawStatus(str, Enum):

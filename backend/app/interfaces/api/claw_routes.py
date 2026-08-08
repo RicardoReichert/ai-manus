@@ -20,6 +20,7 @@ from app.interfaces.schemas.claw import (
     ClawSessionResponse, ListClawSessionsResponse,
     CreateClawSessionRequest, RestartClawSessionRequest,
     ClawHistoryResponse, ClawMessageSchema,
+    ClawToolEventsResponse, ClawToolEventSchema,
 )
 from app.interfaces.schemas.file import FileInfoResponse
 from app.domain.models.user import User
@@ -135,6 +136,19 @@ async def get_session_history(
                     pass
         schemas.append(schema)
     return APIResponse.success(ClawHistoryResponse(messages=schemas))
+
+
+@router.get("/sessions/{session_id}/tool-events", response_model=APIResponse[ClawToolEventsResponse])
+async def get_session_tool_events(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    claw_service: ClawService = Depends(get_claw_service),
+) -> APIResponse[ClawToolEventsResponse]:
+    """Get persisted tool-call history for one of the current user's claw
+    sessions (Computer panel Tools tab restore)."""
+    raw_events = await claw_service.get_tool_events(current_user.id, session_id)
+    schemas = [ClawToolEventSchema.from_domain(e) for e in raw_events]
+    return APIResponse.success(ClawToolEventsResponse(tool_events=schemas))
 
 
 @router.get("/sessions/{session_id}/files/{filename}")

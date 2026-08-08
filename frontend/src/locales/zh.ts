@@ -435,6 +435,9 @@ export default {
   'Tool': '工具',
   'Arguments': '参数',
   'Result': '结果',
+  'Exit code': '退出代码',
+  'Output': '输出',
+  'Output truncated': '输出已截断',
   'Tool is executing...': '工具执行中...',
   'Waiting for result...': '等待结果...',
   // Reset Password Verification

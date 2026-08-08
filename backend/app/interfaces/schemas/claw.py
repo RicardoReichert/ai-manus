@@ -1,7 +1,7 @@
-from typing import Optional, List
+from typing import Any, Optional, List
 from pydantic import BaseModel, Field
 from datetime import datetime
-from app.domain.models.claw import ClawStatus, ClawMessage, ClawAttachment
+from app.domain.models.claw import ClawStatus, ClawMessage, ClawAttachment, ClawToolEvent
 
 
 class ClawSessionResponse(BaseModel):
@@ -104,3 +104,31 @@ class ClawMessageSchema(BaseModel):
 class ClawHistoryResponse(BaseModel):
     """Chat history response"""
     messages: List[ClawMessageSchema]
+
+
+class ClawToolEventSchema(BaseModel):
+    """A single persisted tool-call event"""
+    tool_call_id: str
+    name: str
+    args: Optional[dict] = None
+    result: Optional[Any] = None
+    is_error: bool = False
+    truncated: bool = False
+    timestamp: int
+
+    @staticmethod
+    def from_domain(event: ClawToolEvent) -> 'ClawToolEventSchema':
+        return ClawToolEventSchema(
+            tool_call_id=event.tool_call_id,
+            name=event.name,
+            args=event.args,
+            result=event.result,
+            is_error=event.is_error,
+            truncated=event.truncated,
+            timestamp=event.timestamp,
+        )
+
+
+class ClawToolEventsResponse(BaseModel):
+    """Tool-call history response"""
+    tool_events: List[ClawToolEventSchema]

@@ -1,6 +1,6 @@
 from typing import Optional, List, Protocol
 
-from app.domain.models.claw import ClawSession, ClawMessage, ClawAttachment
+from app.domain.models.claw import ClawSession, ClawMessage, ClawAttachment, ClawToolEvent
 
 
 class ClawSessionRepository(Protocol):
@@ -60,4 +60,12 @@ class ClawSessionRepository(Protocol):
 
     async def clear_messages(self, session_id: str) -> None:
         """Clear all chat messages for a session"""
+        ...
+
+    async def get_tool_events(self, session_id: str) -> List[ClawToolEvent]:
+        """Get the persisted tool-call history for a session (Tools tab restore)"""
+        ...
+
+    async def append_tool_event(self, session_id: str, event: ClawToolEvent) -> None:
+        """Append a completed tool-call event to a session's history"""
         ...

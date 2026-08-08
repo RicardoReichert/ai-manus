@@ -7,7 +7,7 @@ from typing import Optional, List
 
 import httpx
 
-from app.domain.models.claw import ClawSession, ClawStatus, ClawMessage, ClawAttachment
+from app.domain.models.claw import ClawSession, ClawStatus, ClawMessage, ClawAttachment, ClawToolEvent
 from app.domain.external.claw import ClawRuntime, ClawClient
 from app.domain.repositories.claw_repository import ClawSessionRepository
 
@@ -237,6 +237,18 @@ class ClawDomainService:
 
         return self._merge_histories(db_msgs, claw_msgs)
 
+    async def get_tool_events(self, user_id: str, session_id: str) -> List[ClawToolEvent]:
+        """Get the persisted tool-call history for a session (Tools tab
+        restore). Unlike ``get_history``, there's no plugin-side source to
+        merge with — tool call args are never exposed by the plugin's own
+        ``/history`` endpoint (see ``process_chat_stream`` below), so Mongo
+        is the only source of truth here.
+        """
+        session = await self.get_session(user_id, session_id)
+        if not session:
+            return []
+        return await self.claw_repository.get_tool_events(session_id)
+
     @staticmethod
     def _is_no_reply(content: Optional[str]) -> bool:
         """True for OpenClaw's literal "NO_REPLY" sentinel — emitted as the
@@ -349,6 +361,12 @@ class ClawDomainService:
         """
         assistant_content: list[str] = []
         file_attachments: list[ClawAttachment] = []
+        # Tool calls stream across multiple chunks (start -> update* ->
+        # result) keyed by toolCallId; only the 'start' phase carries args,
+        # so accumulate that here and persist one ClawToolEvent per
+        # completed call at 'result' — not once per chunk, since 'update'
+        # frames stream too frequently to write on each one.
+        tool_call_args: dict[str, dict] = {}
 
         try:
             async for chunk in self.claw_client.chat_stream(base_url, message, session_id):
@@ -363,6 +381,24 @@ class ClawDomainService:
                         size=chunk.get("size", 0),
                         file_url=chunk.get("file_url"),
                     ))
+
+                if chunk.get("type") == "tool":
+                    tool_call_id = chunk.get("toolCallId")
+                    phase = chunk.get("phase")
+                    if phase == "start" and tool_call_id:
+                        tool_call_args[tool_call_id] = chunk.get("args") or {}
+                    elif phase == "result" and tool_call_id:
+                        await self.claw_repository.append_tool_event(
+                            session_id,
+                            ClawToolEvent(
+                                tool_call_id=tool_call_id,
+                                name=chunk.get("name") or "tool",
+                                args=tool_call_args.pop(tool_call_id, None),
+                                result=chunk.get("result"),
+                                is_error=bool(chunk.get("isError")),
+                                timestamp=int(datetime.now(UTC).timestamp()),
+                            ),
+                        )
 
                 yield chunk
 

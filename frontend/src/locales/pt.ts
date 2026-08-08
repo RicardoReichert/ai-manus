@@ -436,6 +436,9 @@ export default {
   'Tool': 'Ferramenta',
   'Arguments': 'Argumentos',
   'Result': 'Resultado',
+  'Exit code': 'Código de saída',
+  'Output': 'Saída',
+  'Output truncated': 'Saída truncada',
   'Tool is executing...': 'Ferramenta executando...',
   'Waiting for result...': 'Aguardando resultado...',
   // Reset Password Verification

@@ -17,16 +17,18 @@
         :aria-expanded="isExpanded(entry.id)"
         @click="hasDetails(entry) && toggle(entry.id)"
         @keydown.enter.prevent="hasDetails(entry) && toggle(entry.id)">
-        <span
-          class="mt-[3px] h-[8px] w-[8px] shrink-0 rounded-full"
-          :class="statusDotClass(entry.status)"
-          :title="statusLabel(entry.status)" />
+        <div class="mt-[1px] flex h-[20px] w-[20px] shrink-0 items-center justify-center rounded-[6px] bg-[var(--fill-tsp-white-main)]">
+          <component :is="toolIcon(entry.name)" :size="12" class="text-[var(--icon-tertiary)]" />
+        </div>
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-[6px]">
             <span class="truncate text-[13px] font-[500] text-[var(--text-primary)]">{{ entry.name }}</span>
             <span
-              class="shrink-0 text-[11px]"
+              class="shrink-0 inline-flex items-center gap-[3px] text-[11px]"
               :class="entry.status === 'error' ? 'text-[var(--function-error)]' : 'text-[var(--text-tertiary)]'">
+              <span
+                class="h-[6px] w-[6px] rounded-full"
+                :class="statusDotClass(entry.status)" />
               {{ statusLabel(entry.status) }}
             </span>
           </div>
@@ -42,24 +44,14 @@
       </div>
 
       <div v-if="hasDetails(entry) && isExpanded(entry.id)" class="flex flex-col gap-[8px] px-[10px] pb-[10px]">
-        <div v-if="hasArgs(entry)">
-          <div class="mb-[4px] text-[11px] font-[500] text-[var(--text-tertiary)]">{{ t('Arguments') }}</div>
-          <div class="relative rounded-lg bg-[var(--background-gray-main)] p-2.5 pe-9 max-h-[240px] overflow-y-auto overflow-x-hidden">
-            <ClawValueView :value="entry.args" />
-            <ChatMessageCopyButton :text="stringifyToolValue(entry.args)" button-class="absolute top-1 end-1" />
-          </div>
+        <div v-if="entry.truncated" class="text-[11px] text-[var(--text-tertiary)] italic">
+          {{ t('Output truncated') }}
         </div>
-        <div v-if="hasResult(entry)">
-          <div
-            class="mb-[4px] text-[11px] font-[500]"
-            :class="entry.status === 'error' ? 'text-[var(--function-error)]' : 'text-[var(--text-tertiary)]'">
-            {{ entry.status === 'error' ? t('Error') : t('Result') }}
-          </div>
-          <div class="relative rounded-lg bg-[var(--background-gray-main)] p-2.5 pe-9 max-h-[240px] overflow-y-auto overflow-x-hidden">
-            <ClawValueView :value="entry.result" />
-            <ChatMessageCopyButton :text="stringifyToolValue(entry.result)" button-class="absolute top-1 end-1" />
-          </div>
-        </div>
+        <ClawToolDetailView
+          :name="entry.name"
+          :args="entry.args"
+          :result="entry.result"
+          :is-error="entry.status === 'error'" />
       </div>
     </div>
   </div>
@@ -69,9 +61,9 @@
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ChevronDown } from 'lucide-vue-next';
-import { stringifyToolValue, type ClawToolLogEntry } from '@/api/claw';
-import ChatMessageCopyButton from './ChatMessageCopyButton.vue';
-import ClawValueView from './ClawValueView.vue';
+import { type ClawToolLogEntry } from '@/api/claw';
+import { resolveClawToolKind, CLAW_TOOL_ICON_MAP } from '@/constants/clawTool';
+import ClawToolDetailView from './ClawToolDetailView.vue';
 
 withDefaults(defineProps<{
   toolLog: ClawToolLogEntry[];
@@ -96,6 +88,8 @@ const toggle = (id: string) => {
   }
   expandedIds.value = next;
 };
+
+const toolIcon = (name: string) => CLAW_TOOL_ICON_MAP[resolveClawToolKind(name)];
 
 const statusLabel = (status: ClawToolLogEntry['status']) => {
   const labels: Record<ClawToolLogEntry['status'], string> = {

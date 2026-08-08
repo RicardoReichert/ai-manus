@@ -54,6 +54,21 @@ export interface ClawToolLogEntry {
   /** Raw result/output (or the latest streamed partialResult before the
    * final 'result' phase arrives), for the row's expanded detail view. */
   result?: unknown;
+  /** True when the backend truncated a persisted result (~16KB cap) — see
+   * getClawSessionToolEvents/CLAW_TOOL_EVENT_RESULT_MAX_CHARS on the backend. */
+  truncated?: boolean;
+}
+
+// Wire shape of a persisted tool event, as returned by
+// GET /claw/sessions/{id}/tool-events (mirrors backend ClawToolEventSchema).
+export interface ClawToolEventDto {
+  tool_call_id: string;
+  name: string;
+  args?: Record<string, unknown> | null;
+  result?: unknown;
+  is_error: boolean;
+  truncated: boolean;
+  timestamp: number;
 }
 
 /**
@@ -143,6 +158,11 @@ export async function deleteClawSession(sessionId: string): Promise<void> {
 export async function getClawSessionHistory(sessionId: string): Promise<ClawChatMessage[]> {
   const response = await apiClient.get<ApiResponse<{ messages: ClawChatMessage[] }>>(`/claw/sessions/${sessionId}/history`);
   return response.data.data.messages;
+}
+
+export async function getClawSessionToolEvents(sessionId: string): Promise<ClawToolEventDto[]> {
+  const response = await apiClient.get<ApiResponse<{ tool_events: ClawToolEventDto[] }>>(`/claw/sessions/${sessionId}/tool-events`);
+  return response.data.data.tool_events;
 }
 
 // ---- WebSocket connection ----

@@ -286,7 +286,7 @@ import { useFilePreviewer } from '../composables/useFilePreviewer';
 import { useDialog } from '../composables/useDialog';
 import {
   listClawSessions, createClawSession, getClawSession, restartClawSession, deleteClawSession,
-  getClawSessionHistory, ClawWebSocket, summarizeToolArgs,
+  getClawSessionHistory, getClawSessionToolEvents, ClawWebSocket, summarizeToolArgs,
   type ClawSession, type ClawStatus, type ClawEvent, type ClawToolLogEntry,
 } from '../api/claw';
 import { getAvailableModels, type ModelDescriptor } from '../api/model';
@@ -472,6 +472,32 @@ const loadHistory = async (sessionId: string) => {
     messages.value = loaded;
   } catch (err) {
     console.error('Failed to load claw session history:', err);
+  }
+};
+
+/**
+ * Restores the Tools tab's persisted tool-call history — mirrors
+ * loadHistory's role for chat messages, called from the same two places
+ * (enterSession, and the status-poll transition to 'running'). Live events
+ * arriving afterward share the same id (toolCallId) that handleToolEvent
+ * already keys on, so a live update to a call whose completed history was
+ * just restored here updates that row in place rather than duplicating it.
+ */
+const loadToolHistory = async (sessionId: string) => {
+  try {
+    const events = await getClawSessionToolEvents(sessionId);
+    toolLog.value = events.map((e): ClawToolLogEntry => ({
+      id: e.tool_call_id,
+      name: e.name,
+      argsSummary: summarizeToolArgs(e.args ?? undefined),
+      args: e.args ?? undefined,
+      result: e.result,
+      truncated: e.truncated,
+      status: e.is_error ? 'error' : 'success',
+      timestamp: e.timestamp,
+    }));
+  } catch (err) {
+    console.error('Failed to load claw tool-event history:', err);
   }
 };
 
@@ -703,6 +729,7 @@ const enterSession = async (session: ClawSession) => {
   }
 
   await loadHistory(session.id);
+  await loadToolHistory(session.id);
   setupWebSocket(session.id);
   terminalResetKey.value++;
   if (session.expires_at) startExpiryCountdown(session.expires_at);
@@ -787,6 +814,7 @@ const startStatusPolling = (sessionId: string) => {
       if (session.status === 'running') {
         stopStatusPolling();
         await loadHistory(sessionId);
+        await loadToolHistory(sessionId);
         setupWebSocket(sessionId);
         terminalResetKey.value++;
         if (session.expires_at) startExpiryCountdown(session.expires_at);
