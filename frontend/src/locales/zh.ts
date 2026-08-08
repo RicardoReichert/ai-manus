@@ -609,4 +609,5 @@ export default {
 
   // Claw Computer Panel
   "{name}'s screen": "{name} 的屏幕",
+  'Computer': '电脑',
 }

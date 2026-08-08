@@ -610,4 +610,5 @@ export default {
 
   // Claw Computer Panel
   "{name}'s screen": "Tela de {name}",
+  'Computer': 'Computador',
 }

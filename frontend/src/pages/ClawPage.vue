@@ -69,6 +69,14 @@
                 @update:model-id="handleModelChange"
               />
               <button
+                type="button"
+                @click="toggleComputerPanel"
+                class="h-8 px-3 rounded-[100px] inline-flex items-center gap-1 clickable outline outline-1 outline-offset-[-1px] outline-[var(--border-btn-main)] hover:bg-[var(--fill-tsp-white-light)] text-[var(--text-secondary)] text-sm font-medium"
+              >
+                <MonitorIcon :size="14" class="shrink-0" />
+                {{ t('Computer') }}
+              </button>
+              <button
                 @click="handleDeleteSession"
                 class="h-8 px-3 rounded-[100px] inline-flex items-center gap-1 clickable outline outline-1 outline-offset-[-1px] outline-[var(--border-btn-main)] hover:bg-[var(--fill-tsp-white-light)] text-[var(--text-secondary)] text-sm font-medium"
               >
@@ -252,18 +260,26 @@
 
       </div>
     </div>
+
+    <ClawComputerPanel
+      v-if="activeSession"
+      ref="clawComputerPanel"
+      :sessionId="activeSession.id"
+      :toolLog="toolLog"
+    />
   </SimpleBar>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, onUnmounted, nextTick, watch } from 'vue';
-import { Code, MessageSquarePlus, ArrowDown, ChevronDown, Check, Plus } from 'lucide-vue-next';
+import { Code, MessageSquarePlus, ArrowDown, ChevronDown, Check, Plus, Monitor as MonitorIcon } from 'lucide-vue-next';
 import { useI18n } from 'vue-i18n';
 import SimpleBar from '../components/SimpleBar.vue';
 import ChatBox from '../components/ChatBox.vue';
 import ChatMessage from '../components/ChatMessage.vue';
 import LoadingIndicator from '../components/ui/LoadingIndicator.vue';
 import ClawIcon from '../components/icons/ClawIcon.vue';
+import ClawComputerPanel from '../components/ClawComputerPanel.vue';
 import openclawColorImage from '../assets/openclaw-color.png';
 import { useFilePreviewer } from '../composables/useFilePreviewer';
 import { useDialog } from '../composables/useDialog';
@@ -283,6 +299,7 @@ const { hideFilePreviewer } = useFilePreviewer();
 const { showConfirmDialog } = useDialog();
 
 const simpleBarRef = ref<InstanceType<typeof SimpleBar>>();
+const clawComputerPanel = ref<InstanceType<typeof ClawComputerPanel>>();
 
 const sessions = ref<ClawSession[]>([]);
 const activeSessionId = ref<string | null>(null);
@@ -563,7 +580,19 @@ const summarizeToolArgs = (args?: Record<string, unknown>): string => {
   }
 };
 
+const toggleComputerPanel = () => {
+  if (clawComputerPanel.value?.isShow) {
+    clawComputerPanel.value?.hidePanel();
+  } else {
+    clawComputerPanel.value?.showPanel();
+  }
+};
+
 const handleToolEvent = (chunk: ClawEvent) => {
+  if (!clawComputerPanel.value?.isShow) {
+    clawComputerPanel.value?.showPanel();
+  }
+
   const id = chunk.toolCallId || `${chunk.name || 'tool'}-${Date.now()}`;
   const existing = toolLog.value.find((e) => e.id === id);
 
