@@ -270,7 +270,7 @@ import { useDialog } from '../composables/useDialog';
 import {
   listClawSessions, createClawSession, getClawSession, restartClawSession, deleteClawSession,
   getClawSessionHistory, ClawWebSocket,
-  type ClawSession, type ClawStatus, type ClawEvent,
+  type ClawSession, type ClawStatus, type ClawEvent, type ClawToolLogEntry,
 } from '../api/claw';
 import { getAvailableModels, type ModelDescriptor } from '../api/model';
 import ModelSelectorDropdown from '../components/ModelSelectorDropdown.vue';
@@ -288,6 +288,10 @@ const sessions = ref<ClawSession[]>([]);
 const activeSessionId = ref<string | null>(null);
 const isLoadingSession = ref(true);
 const messages = ref<Message[]>([]);
+// Live tool-call log for the Computer panel (Task 12). Rendering + panel
+// mounting/auto-open are handled elsewhere (see ClawComputerPanelContent.vue
+// and Task 13) — this page only owns the reactive data and the append logic.
+const toolLog = ref<ClawToolLogEntry[]>([]);
 const inputMessage = ref('');
 const isWaitingResponse = ref(false);
 const follow = ref(true);
@@ -525,6 +529,11 @@ const handleWSEvent = (chunk: ClawEvent) => {
     return;
   }
 
+  if (chunk.type === 'tool') {
+    handleToolEvent(chunk);
+    return;
+  }
+
   if (chunk.type === 'error') {
     if (streamingAssistantIdx.value >= 0) {
       (messages.value[streamingAssistantIdx.value].content as MessageContent).content
@@ -538,6 +547,53 @@ const handleWSEvent = (chunk: ClawEvent) => {
     streamingAssistantIdx.value = -1;
     isWaitingResponse.value = false;
   }
+};
+
+// ------------------------------------------------------------------
+// Tool-call log (Computer panel)
+// ------------------------------------------------------------------
+
+const summarizeToolArgs = (args?: Record<string, unknown>): string => {
+  if (!args || Object.keys(args).length === 0) return '';
+  try {
+    const s = JSON.stringify(args);
+    return s.length > 80 ? `${s.slice(0, 80)}…` : s;
+  } catch {
+    return '';
+  }
+};
+
+const handleToolEvent = (chunk: ClawEvent) => {
+  const id = chunk.toolCallId || `${chunk.name || 'tool'}-${Date.now()}`;
+  const existing = toolLog.value.find((e) => e.id === id);
+
+  if (chunk.phase === 'result') {
+    if (existing) {
+      existing.status = chunk.isError ? 'error' : 'success';
+    } else {
+      toolLog.value.push({
+        id,
+        name: chunk.name || 'tool',
+        argsSummary: summarizeToolArgs(chunk.args),
+        status: chunk.isError ? 'error' : 'success',
+        timestamp: Math.floor(Date.now() / 1000),
+      });
+    }
+    return;
+  }
+
+  if (existing) {
+    if (chunk.args) existing.argsSummary = summarizeToolArgs(chunk.args);
+    return;
+  }
+
+  toolLog.value.push({
+    id,
+    name: chunk.name || 'tool',
+    argsSummary: summarizeToolArgs(chunk.args),
+    status: 'running',
+    timestamp: Math.floor(Date.now() / 1000),
+  });
 };
 
 // ------------------------------------------------------------------
@@ -590,6 +646,7 @@ const teardownActiveSession = () => {
   stopExpiryCountdown();
   remainingSeconds.value = null;
   messages.value = [];
+  toolLog.value = [];
 };
 
 const enterSession = async (session: ClawSession) => {

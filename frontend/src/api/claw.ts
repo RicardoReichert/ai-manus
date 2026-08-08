@@ -40,6 +40,16 @@ export interface ClawEvent {
   meta?: string;
 }
 
+// A single row in the Computer panel's live tool-call log, built up from
+// 'tool'-typed ClawEvents (start/update/result phases keyed by toolCallId).
+export interface ClawToolLogEntry {
+  id: string;
+  name: string;
+  argsSummary: string;
+  status: 'running' | 'success' | 'error';
+  timestamp: number;
+}
+
 export interface ClawChatAttachment {
   file_id: string;
   filename: string;

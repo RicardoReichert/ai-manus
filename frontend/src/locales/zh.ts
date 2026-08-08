@@ -282,6 +282,8 @@ export default {
   'Asking question': '正在提问',
   // Tool names
   'Terminal': '终端',
+  'No tool activity yet': '暂无工具活动',
+  'Done': '完成',
   'File': '文件',
   'Browser': '浏览器',
   'Information': '信息',

@@ -29,6 +29,15 @@
           @click="viewMode = 'terminal'">
           {{ t('Terminal') }}
         </button>
+        <button
+          type="button"
+          class="h-6 rounded-[6px] px-[10px] text-[12px] font-[500] transition-colors"
+          :class="viewMode === 'tools'
+            ? 'bg-[var(--background-gray-main)] text-[var(--text-primary)]'
+            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'"
+          @click="viewMode = 'tools'">
+          {{ t('Tools') }}
+        </button>
       </div>
 
       <div class="flex shrink-0 items-center gap-[4px]">
@@ -73,6 +82,9 @@
       <ClawTerminalView
         v-else-if="sessionId && viewMode === 'terminal'"
         :sessionId="sessionId" />
+      <ClawToolLogView
+        v-else-if="viewMode === 'tools'"
+        :toolLog="toolLog" />
 
       <button
         v-if="sessionId && viewMode === 'screen'"
@@ -96,7 +108,8 @@ import { useI18n } from 'vue-i18n';
 import { X } from 'lucide-vue-next';
 import VNCViewer from './VNCViewer.vue';
 import ClawTerminalView from './ClawTerminalView.vue';
-import { getClawVncUrl } from '@/api/claw';
+import ClawToolLogView from './ClawToolLogView.vue';
+import { getClawVncUrl, type ClawToolLogEntry } from '@/api/claw';
 import CenterViewIcon from './icons/CenterViewIcon.vue';
 import SideViewIcon from './icons/SideViewIcon.vue';
 import TakeOverIcon from './icons/TakeOverIcon.vue';
@@ -105,13 +118,15 @@ import { eventBus } from '@/utils/eventBus';
 const props = withDefaults(defineProps<{
   sessionId?: string;
   presentation?: 'sidebar' | 'dialog';
+  toolLog?: ClawToolLogEntry[];
 }>(), {
   presentation: 'sidebar',
+  toolLog: () => [],
 });
 
 const { t } = useI18n();
 const isMobile = useMediaQuery('(max-width: 767px)');
-const viewMode = ref<'screen' | 'terminal'>('screen');
+const viewMode = ref<'screen' | 'terminal' | 'tools'>('screen');
 
 const shellClass = computed(() => {
   if (props.presentation === 'dialog') {

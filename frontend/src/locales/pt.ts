@@ -283,6 +283,8 @@ export default {
   'Asking question': 'Fazendo pergunta',
   // Tool names
   'Terminal': 'Terminal',
+  'No tool activity yet': 'Ainda nenhuma atividade de ferramenta',
+  'Done': 'Concluído',
   'File': 'Arquivo',
   'Browser': 'Navegador',
   'Information': 'Informação',

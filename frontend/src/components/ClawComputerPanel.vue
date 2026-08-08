@@ -13,6 +13,7 @@
         v-if="isShow"
         presentation="sidebar"
         :sessionId="sessionId"
+        :toolLog="toolLog"
         @hide="hidePanel"
         @toggle-presentation="togglePresentation"
       />
@@ -30,6 +31,7 @@
         <ClawComputerPanelContent
           presentation="dialog"
           :sessionId="sessionId"
+          :toolLog="toolLog"
           @hide="hidePanel"
           @toggle-presentation="togglePresentation"
         />
@@ -42,6 +44,7 @@
 import { ref, computed } from 'vue'
 import ClawComputerPanelContent from './ClawComputerPanelContent.vue'
 import { useResizeObserver } from '../composables/useResizeObserver'
+import type { ClawToolLogEntry } from '../api/claw'
 
 export type ComputerPresentation = 'sidebar' | 'dialog'
 
@@ -61,6 +64,7 @@ const sideWidth = computed(() => {
 
 defineProps<{
   sessionId?: string
+  toolLog?: ClawToolLogEntry[]
 }>()
 
 const showPanel = () => {
