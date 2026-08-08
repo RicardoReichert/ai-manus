@@ -10,6 +10,27 @@
         </h2>
       </div>
 
+      <div class="flex shrink-0 items-center gap-[2px] rounded-[8px] bg-[var(--fill-tsp-white-light)] p-[2px]">
+        <button
+          type="button"
+          class="h-6 rounded-[6px] px-[10px] text-[12px] font-[500] transition-colors"
+          :class="viewMode === 'screen'
+            ? 'bg-[var(--background-gray-main)] text-[var(--text-primary)]'
+            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'"
+          @click="viewMode = 'screen'">
+          {{ t('Screen') }}
+        </button>
+        <button
+          type="button"
+          class="h-6 rounded-[6px] px-[10px] text-[12px] font-[500] transition-colors"
+          :class="viewMode === 'terminal'
+            ? 'bg-[var(--background-gray-main)] text-[var(--text-primary)]'
+            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'"
+          @click="viewMode = 'terminal'">
+          {{ t('Terminal') }}
+        </button>
+      </div>
+
       <div class="flex shrink-0 items-center gap-[4px]">
         <div
           v-if="!isMobile"
@@ -45,20 +66,24 @@
 
     <div class="flex-1 min-h-0">
       <VNCViewer
-        v-if="sessionId"
+        v-if="sessionId && viewMode === 'screen'"
         :sessionId="sessionId"
         :enabled="true"
         :urlResolver="getClawVncUrl" />
+      <ClawTerminalView
+        v-else-if="sessionId && viewMode === 'terminal'"
+        :sessionId="sessionId" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useMediaQuery } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { X } from 'lucide-vue-next';
 import VNCViewer from './VNCViewer.vue';
+import ClawTerminalView from './ClawTerminalView.vue';
 import { getClawVncUrl } from '@/api/claw';
 import CenterViewIcon from './icons/CenterViewIcon.vue';
 import SideViewIcon from './icons/SideViewIcon.vue';
@@ -72,6 +97,7 @@ const props = withDefaults(defineProps<{
 
 const { t } = useI18n();
 const isMobile = useMediaQuery('(max-width: 767px)');
+const viewMode = ref<'screen' | 'terminal'>('screen');
 
 const shellClass = computed(() => {
   if (props.presentation === 'dialog') {

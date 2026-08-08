@@ -199,6 +199,8 @@ export default {
   'live': 'live',
   'Live': 'Live',
   'Close': 'Close',
+  'Screen': 'Screen',
+  'Terminal session ended': 'Terminal session ended',
   'Select an application to use': 'Select an application to use',
   'Failed to load file content': 'Failed to load file content',
   'Give Manus a task to work on...': 'Give Manus a task to work on...',

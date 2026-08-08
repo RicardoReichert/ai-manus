@@ -199,6 +199,8 @@ export default {
   'live': 'ao vivo',
   'Live': 'Ao vivo',
   'Close': 'Fechar',
+  'Screen': 'Tela',
+  'Terminal session ended': 'Sessão do terminal encerrada',
   'Select an application to use': 'Selecione um aplicativo para usar',
   'Failed to load file content': 'Falha ao carregar conteúdo do arquivo',
   'Give Manus a task to work on...': 'Dê uma tarefa para o Manus trabalhar...',

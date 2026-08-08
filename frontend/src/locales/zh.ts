@@ -199,6 +199,8 @@ export default {
   'live': '实时',
   'Live': '实时',
   'Close': '关闭',
+  'Screen': '屏幕',
+  'Terminal session ended': '终端会话已结束',
   'Select an application to use': '选择要使用的应用',
   'Failed to load file content': '加载文件内容失败',
   'Give Manus a task to work on...': '给 Manus 一个任务...',
