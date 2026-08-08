@@ -88,3 +88,14 @@ class ClawSession(BaseModel):
         if self.container_ip:
             return f"ws://{self.container_ip}:5901"
         return None
+
+    @property
+    def terminal_ws_base_url(self) -> Optional[str]:
+        """WebSocket base URL for the manus-claw plugin's Operator Terminal
+        endpoint (``ws://<container_ip>:18788/terminal/<terminal_session_id>``,
+        see Task 5). Same host/port as ``http_base_url``, just the ``ws``
+        scheme — the plugin serves both HTTP and this WS upgrade off one
+        server."""
+        if self.container_ip:
+            return f"ws://{self.container_ip}:18788"
+        return None

@@ -792,3 +792,118 @@ async def claw_vnc_ws(websocket: WebSocket, session_id: str):
             await websocket.close(code=1011, reason=f"WebSocket error: {str(e)}")
         except Exception:
             pass
+
+
+@router.websocket("/claw/terminal/{session_id}")
+async def claw_terminal_ws(websocket: WebSocket, session_id: str):
+    """Claw Operator Terminal proxy — Cookie / Bearer auth, no signed URL.
+
+    Unlike ``claw_vnc_ws`` (raw binary), this proxies JSON *text* frames:
+    Task 5's plugin WS endpoint exchanges JSON messages, not raw bytes, so
+    forwarding is ``receive_text``/``send_text`` in both directions rather
+    than ``receive_bytes``/``send_bytes``. Frames are passed through
+    unparsed — this route only needs to move bytes between the two sockets,
+    not interpret the protocol.
+
+    Optional query params ``?cols=&rows=`` size the initial PTY (defaults
+    80x24, matching the plugin's own defaults per Task 5's report); resizing
+    afterwards is a client -> server ``{"type":"resize",...}`` message,
+    forwarded like any other frame.
+
+    Client -> Server (forwarded as-is to the Claw container):
+      {"type":"input","data":"..."}
+      {"type":"resize","cols":100,"rows":30}
+
+    Server -> Client (forwarded as-is from the Claw container):
+      {"type":"data","seq":N,"data":"..."}
+      {"type":"exit","exit_code":...,"signal":...,"reason":"..."}
+      {"type":"error","error":"..."}
+    """
+    try:
+        user = await resolve_ws_user(websocket)
+    except Exception:
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+
+    claw_service = get_claw_service()
+    session = await claw_service.get_session(user.id, session_id)
+    if not session:
+        await websocket.close(code=4004, reason="Claw session not found")
+        return
+
+    def _int_query_param(name: str, default: int) -> int:
+        raw = websocket.query_params.get(name)
+        if not raw:
+            return default
+        try:
+            return int(raw)
+        except ValueError:
+            return default
+
+    cols = _int_query_param("cols", 80)
+    rows = _int_query_param("rows", 24)
+
+    await websocket.accept()
+    logger.info("Accepted Claw terminal WS for session %s user %s", session_id, user.id)
+
+    try:
+        terminal_ws_url, terminal_session_id = await claw_service.open_terminal(
+            user.id, session_id, cols, rows,
+        )
+        logger.info(
+            "Opened Claw terminal %s for session %s, connecting to %s",
+            terminal_session_id, session_id, terminal_ws_url,
+        )
+
+        async with websockets.connect(terminal_ws_url) as terminal_ws:
+            async def forward_to_terminal() -> None:
+                try:
+                    while True:
+                        data = await websocket.receive_text()
+                        await terminal_ws.send(data)
+                except WebSocketDisconnect:
+                    logger.info("Web -> Claw terminal connection closed")
+                except Exception as e:
+                    logger.error("Error forwarding data to Claw terminal: %s", e)
+
+            async def forward_from_terminal() -> None:
+                try:
+                    while True:
+                        data = await terminal_ws.recv()
+                        if isinstance(data, bytes):
+                            data = data.decode("utf-8", errors="replace")
+                        await websocket.send_text(data)
+                except websockets.exceptions.ConnectionClosed:
+                    logger.info("Claw terminal -> Web connection closed")
+                except Exception as e:
+                    logger.error("Error forwarding data from Claw terminal: %s", e)
+
+            forward_task1 = asyncio.create_task(forward_to_terminal())
+            forward_task2 = asyncio.create_task(forward_from_terminal())
+            _done, pending = await asyncio.wait(
+                [forward_task1, forward_task2],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+    except ValueError as e:
+        logger.error("Claw terminal unavailable for session %s: %s", session_id, e)
+        try:
+            await websocket.close(code=4004, reason=str(e))
+        except Exception:
+            pass
+    except ConnectionError as e:
+        logger.error("Unable to connect to Claw terminal: %s", e)
+        try:
+            await websocket.close(
+                code=1011,
+                reason=f"Unable to connect to Claw terminal: {str(e)}",
+            )
+        except Exception:
+            pass
+    except Exception as e:
+        logger.error("Claw terminal WebSocket error: %s", e)
+        try:
+            await websocket.close(code=1011, reason=f"WebSocket error: {str(e)}")
+        except Exception:
+            pass

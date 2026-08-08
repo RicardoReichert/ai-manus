@@ -75,3 +75,12 @@ class ClawClient(Protocol):
     async def get_file(self, base_url: str, filename: str) -> tuple[bytes, str]:
         """Download a file. Returns (content_bytes, content_type)."""
         ...
+
+    async def open_terminal(
+        self, base_url: str, cols: int = 80, rows: int = 24,
+    ) -> dict:
+        """POST /terminal/open on the claw instance's plugin server.
+
+        Returns the plugin's JSON response
+        (``{"session_id", "agent_id", "shell", "cwd", "confined"}``)."""
+        ...

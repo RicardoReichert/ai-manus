@@ -425,6 +425,34 @@ class ClawDomainService:
         return session.vnc_url
 
     # ------------------------------------------------------------------
+    # Operator Terminal
+    # ------------------------------------------------------------------
+
+    async def open_terminal(
+        self, user_id: str, session_id: str, cols: int = 80, rows: int = 24,
+    ) -> tuple[str, str]:
+        """Open a new PTY on the claw instance and return
+        ``(terminal_ws_url, terminal_session_id)``.
+
+        Same two-part ownership/running check as ``get_vnc_url``. Raises
+        ``ValueError`` if the session is missing/not owned/not running,
+        propagates whatever the plugin's ``/terminal/open`` call raises
+        (e.g. ``httpx.HTTPStatusError`` on a 502/503 from the plugin — see
+        Task 5's report for those error shapes) otherwise.
+        """
+        session = await self.get_session(user_id, session_id)
+        if not session or not session.http_base_url or not session.terminal_ws_base_url:
+            raise ValueError("No running claw session found")
+        if session.status != ClawStatus.RUNNING:
+            raise ValueError(f"Claw session is not running (status: {session.status})")
+
+        result = await self.claw_client.open_terminal(session.http_base_url, cols, rows)
+        terminal_session_id = result.get("session_id")
+        if not terminal_session_id:
+            raise ValueError("Claw terminal open did not return a session_id")
+        return f"{session.terminal_ws_base_url}/terminal/{terminal_session_id}", terminal_session_id
+
+    # ------------------------------------------------------------------
     # Auth
     # ------------------------------------------------------------------
 

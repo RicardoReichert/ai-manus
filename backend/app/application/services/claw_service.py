@@ -88,6 +88,14 @@ class ClawService:
         stack (see ``ClawSession.vnc_url``)."""
         return await self.domain.get_vnc_url(user_id, session_id)
 
+    async def open_terminal(
+        self, user_id: str, session_id: str, cols: int = 80, rows: int = 24,
+    ) -> tuple[str, str]:
+        """Open an Operator Terminal PTY for a session. Returns
+        ``(terminal_ws_url, terminal_session_id)``. Mirrors ``get_vnc_url``'s
+        role of enforcing ownership before returning a URL to connect to."""
+        return await self.domain.open_terminal(user_id, session_id, cols, rows)
+
     async def verify_api_key(self, api_key: str) -> Optional[str]:
         return await self.domain.verify_api_key(api_key, self.settings.claw_api_key)
 

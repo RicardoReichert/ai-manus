@@ -100,6 +100,22 @@ class HttpClawClient:
                 ))
             return messages
 
+    async def open_terminal(
+        self, base_url: str, cols: int = 80, rows: int = 24,
+    ) -> dict:
+        """POST /terminal/open on the Claw container's plugin server.
+
+        Returns the plugin's response body, e.g.:
+        ``{"session_id": "...", "agent_id": "main", "shell": "/bin/bash",
+        "cwd": "...", "confined": false}`` (see Task 5's report). Raises on
+        HTTP error (caller maps this to a WS close).
+        """
+        url = f"{base_url}/terminal/open"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json={"cols": cols, "rows": rows})
+            resp.raise_for_status()
+            return resp.json()
+
     async def get_file(self, base_url: str, filename: str) -> tuple[bytes, str]:
         url = f"{base_url}/files/{filename}"
         async with httpx.AsyncClient(timeout=60.0) as client:
