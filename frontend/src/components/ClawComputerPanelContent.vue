@@ -75,10 +75,15 @@
 
     <div class="flex-1 min-h-0 relative">
       <VNCViewer
-        v-if="sessionId && viewMode === 'screen'"
+        v-if="sessionId && viewMode === 'screen' && !vncDisconnected"
         :sessionId="sessionId"
         :enabled="true"
-        :urlResolver="getClawVncUrl" />
+        :urlResolver="getClawVncUrl"
+        @connected="vncDisconnected = false"
+        @disconnected="vncDisconnected = true" />
+      <ComputerInactiveEmpty
+        v-else-if="sessionId && viewMode === 'screen' && vncDisconnected"
+        name="Manus Claw" />
       <ClawTerminalView
         v-else-if="sessionId && viewMode === 'terminal'"
         :sessionId="sessionId" />
@@ -102,13 +107,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useMediaQuery } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { X } from 'lucide-vue-next';
 import VNCViewer from './VNCViewer.vue';
 import ClawTerminalView from './ClawTerminalView.vue';
 import ClawToolLogView from './ClawToolLogView.vue';
+import ComputerInactiveEmpty from './ComputerInactiveEmpty.vue';
 import { getClawVncUrl, type ClawToolLogEntry } from '@/api/claw';
 import CenterViewIcon from './icons/CenterViewIcon.vue';
 import SideViewIcon from './icons/SideViewIcon.vue';
@@ -127,6 +133,11 @@ const props = withDefaults(defineProps<{
 const { t } = useI18n();
 const isMobile = useMediaQuery('(max-width: 767px)');
 const viewMode = ref<'screen' | 'terminal' | 'tools'>('screen');
+const vncDisconnected = ref(false);
+
+watch(() => props.sessionId, () => {
+  vncDisconnected.value = false;
+});
 
 const shellClass = computed(() => {
   if (props.presentation === 'dialog') {

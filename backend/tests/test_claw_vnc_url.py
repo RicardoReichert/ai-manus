@@ -100,6 +100,9 @@ class NoopClawClient:
     async def get_file(self, base_url, filename):
         return b"", "application/octet-stream"
 
+    async def open_terminal(self, base_url, cols, rows):
+        return {"session_id": "term-session-1"}
+
 
 def _build_domain_service(session: Optional[ClawSession]) -> ClawDomainService:
     return ClawDomainService(
@@ -181,3 +184,57 @@ async def test_get_vnc_url_raises_when_container_not_yet_provisioned():
 
     with pytest.raises(ValueError):
         await domain.get_vnc_url("user-1", "sess-1")
+
+
+# ----------------------------------------------------------------------
+# open_terminal — carries the identical ownership + RUNNING guard as
+# get_vnc_url above (see ClawDomainService.open_terminal's docstring).
+# ----------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_open_terminal_returns_ws_url_and_session_id_for_owned_running_session():
+    session = _session(container_ip="10.0.0.5")
+    domain = _build_domain_service(session)
+
+    with patch.object(ClawDomainService, "_health_check", AsyncMock(return_value=True)):
+        ws_url, terminal_session_id = await domain.open_terminal("user-1", "sess-1")
+
+    assert terminal_session_id == "term-session-1"
+    assert ws_url == "ws://10.0.0.5:18788/terminal/term-session-1"
+
+
+@pytest.mark.asyncio
+async def test_open_terminal_via_application_service_matches_documented_signature():
+    """``ClawService.open_terminal(user_id, session_id, cols, rows)`` —
+    mirrors get_vnc_url's application-service wrapper test above."""
+    session = _session(container_ip="10.0.0.5")
+    domain = _build_domain_service(session)
+    service = ClawService(domain)
+
+    with patch.object(ClawDomainService, "_health_check", AsyncMock(return_value=True)):
+        ws_url, terminal_session_id = await service.open_terminal("user-1", "sess-1")
+
+    assert terminal_session_id == "term-session-1"
+    assert ws_url == "ws://10.0.0.5:18788/terminal/term-session-1"
+
+
+@pytest.mark.asyncio
+async def test_open_terminal_raises_for_session_not_owned_by_caller():
+    session = _session(session_id="sess-1", user_id="owner", container_ip="10.0.0.5")
+    domain = _build_domain_service(session)
+
+    with pytest.raises(ValueError):
+        await domain.open_terminal("someone-else", "sess-1")
+
+
+@pytest.mark.asyncio
+async def test_open_terminal_raises_for_stopped_session_with_stale_container_ip():
+    """Same regression get_vnc_url guards against: ``_check_expiry`` marks a
+    session STOPPED on a failed health check but only the expiry-timeout
+    branch clears ``container_ip``, so a session whose container just died
+    can still carry a non-None ``container_ip``/``terminal_ws_base_url``."""
+    session = _session(container_ip="10.0.0.5", status=ClawStatus.STOPPED)
+    domain = _build_domain_service(session)
+
+    with pytest.raises(ValueError):
+        await domain.open_terminal("user-1", "sess-1")

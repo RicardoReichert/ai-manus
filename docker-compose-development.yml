@@ -93,7 +93,7 @@ services:
       dockerfile: Dockerfile
     hostname: claw
     ports:
-      - "18788:18788" # manus-claw HTTP server
+      - "127.0.0.1:18788:18788" # manus-claw HTTP server (localhost-only: proxy endpoints have no auth of their own)
     environment:
       - CLAW_TTL_SECONDS=0        # No TTL in development (0 = unlimited)
       - MANUS_API_BASE_URL=http://backend:8000

@@ -150,22 +150,27 @@ materially larger kernel-facing surface than the default container) — keep it 
 
 **Graphical display and VNC in Claw (`CLAW_BROWSER_GUI`)**: The Claw container includes an optional graphical stack
 — Xvfb (virtual frame buffer), x11vnc (VNC server), and websockify (WebSocket-to-VNC proxy) — gated by `CLAW_BROWSER_GUI` env var
-(`Settings.claw_browser_gui`, default `True` in dev, `False` in production). When enabled, each Claw session
-starts its own display server and headless Chrome browser, surfaced to the UI via the Computer panel (live VNC view of
-the browser, terminal tab, tool-call log, operator takeover). This trades off memory and CPU per session (roughly 200–400 MB
-baseline Xvfb + Chrome process overhead) for immediate visual feedback on agent browsing activity and the ability to
-manually intervene without breaking the agent's session. In dev, it's on by default to make agent interaction visible; in
-production, operators opt-in with `CLAW_BROWSER_GUI=true` only when interactive debugging is needed, keeping the default
-footprint lean. No `manus-claw` plugin changes are required: the plugin reuses OpenClaw's own built-in browser execution,
-and the graphical layer is orthogonal — the agent's tool execution works the same way regardless, just with or without a
-live display behind it.
+(`Settings.claw_browser_gui`, default `True` in dev, `False` in production). The `browser` tool itself is enabled
+unconditionally in `openclaw.json` (`browser.enabled: true`, `tools.alsoAllow: ["browser"]`) regardless of this flag —
+`CLAW_BROWSER_GUI` only toggles `browser.headless` (`false` when on, `true` when off) and whether the Xvfb/x11vnc/websockify
+processes start at all. When enabled, each Claw session starts its own display server and a headed (visible, non-headless)
+Chrome browser, surfaced to the UI via the Computer panel (live VNC view of the browser, terminal tab, tool-call log, operator
+takeover). This trades off memory and CPU per session (roughly 200–400 MB baseline Xvfb + Chrome process overhead) for
+immediate visual feedback on agent browsing activity and the ability to manually intervene without breaking the agent's
+session. In dev, it's on by default to make agent interaction visible; in production, operators opt-in with
+`CLAW_BROWSER_GUI=true` only when interactive debugging is needed, keeping the default footprint lean. Note the Xvfb/x11vnc/
+x11-utils and system Chromium packages are baked into the Claw image unconditionally at build time (paid in image size by
+every deployment, whether or not the flag is ever turned on) — only their *use* at runtime is gated. No `manus-claw` plugin
+changes are required: the plugin reuses OpenClaw's own built-in browser execution, and the graphical layer is orthogonal —
+the agent's tool execution works the same way regardless, just with or without a live display behind it.
 
 **Operator terminal and tool-event surfacing**: The Claw panel now exposes two new capabilities. First, `gateway.terminal.enabled`
 (a setting in the OpenClaw Gateway config) activates an operator-terminal-backed interactive terminal within the panel, allowing users
 to execute shell commands in the agent's environment in real-time — useful for debugging or querying tool state mid-execution.
-Second, the backend now surfaces `session.tool` events through the WebSocket (`/api/v1/ws/chat`), piping tool-call activity to the
-Computer panel's tool-call log: users see each tool invocation (name, input, output) as the agent executes, making it easy to spot
-stuck steps or unexpected tool behavior without hunting through server logs.
+Second, the backend now surfaces `session.tool` events through the Claw WebSocket (`/api/v1/ws/claw/{session_id}`, distinct from
+the Manus Agent's `/api/v1/ws/chat`), piping tool-call activity to the Computer panel's tool-call log: users see each tool
+invocation (name, input, output) as the agent executes, making it easy to spot stuck steps or unexpected tool behavior without
+hunting through server logs.
 
 ### Running Services Individually (Without Docker)
 

@@ -48,8 +48,8 @@ const statusLabel = (status: ClawToolLogEntry['status']) => {
 };
 
 const statusDotClass = (status: ClawToolLogEntry['status']) => {
-  if (status === 'running') return 'bg-yellow-500 animate-pulse';
-  if (status === 'error') return 'bg-red-500';
-  return 'bg-green-500';
+  if (status === 'running') return 'bg-[var(--function-warning)] animate-pulse';
+  if (status === 'error') return 'bg-[var(--function-error)]';
+  return 'bg-[var(--function-success)]';
 };
 </script>
