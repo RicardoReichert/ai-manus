@@ -113,6 +113,11 @@ echo "[entrypoint] Configuration written to ${CONFIG_FILE}"
 # anything written into the config volume above must be handed back to the
 # `node` user before the gateway (which runs as `node`) can use it.
 chown -R node:node "${CONFIG_DIR}"
+# OpenClaw's plugin loader only trusts root-owned plugin directories —
+# the blanket chown above (needed so the `node` user can write config)
+# otherwise flags manus-claw as "blocked plugin candidate: suspicious
+# ownership" (confirmed live via `openclaw sandbox explain`).
+chown -R root:root "${CONFIG_DIR}/extensions"
 
 # ---------------------------------------------------------------------------
 # Docker-in-Docker: only when explicitly opted in (CLAW_DOCKER_IN_DOCKER=true,
