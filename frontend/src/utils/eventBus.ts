@@ -20,6 +20,8 @@ export type AppEvents = {
   'ui:takeover': {
     sessionId: string
     active: boolean
+    /** Optional override for non-Manus-Agent sessions (e.g. Claw), mirrors VNCViewer's urlResolver prop */
+    urlResolver?: (sessionId: string) => string
   }
   /** Global toast notifications */
   'ui:toast': {
