@@ -152,6 +152,14 @@ DOCKERD_PID=""
 if [ "${CLAW_DOCKER_IN_DOCKER}" = "true" ]; then
     echo "[entrypoint] CLAW_DOCKER_IN_DOCKER=true, starting nested dockerd (storage-driver=vfs)"
     mkdir -p /var/lib/docker
+    # Guard against a stale /var/run/docker.pid: the docker-ce apt package's
+    # postinst briefly starts+stops dockerd during image build, and that
+    # leftover pid file can get committed into the image layer. At real
+    # container boot, an early entrypoint process can coincidentally reuse
+    # that same low PID, so dockerd's "is it still running?" check falsely
+    # believes a daemon is already up and refuses to start — permanently,
+    # since nothing here retries. Always start from a clean pid/socket state.
+    rm -f /var/run/docker.pid /var/run/docker.sock
     dockerd --storage-driver=vfs > /var/log/dockerd.log 2>&1 &
     DOCKERD_PID=$!
 
