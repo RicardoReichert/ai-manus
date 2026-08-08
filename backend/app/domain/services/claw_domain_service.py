@@ -402,6 +402,19 @@ class ClawDomainService:
         return await self.claw_client.get_file(session.http_base_url, filename)
 
     # ------------------------------------------------------------------
+    # VNC
+    # ------------------------------------------------------------------
+
+    async def get_vnc_url(self, user_id: str, session_id: str) -> str:
+        """Get the VNC WebSocket URL for a session, ensuring it belongs to
+        the user. Raises ValueError if the session is missing, not owned by
+        ``user_id``, or has no running container yet."""
+        session = await self.get_session(user_id, session_id)
+        if not session or not session.vnc_url:
+            raise ValueError("No running claw session found")
+        return session.vnc_url
+
+    # ------------------------------------------------------------------
     # Auth
     # ------------------------------------------------------------------
 

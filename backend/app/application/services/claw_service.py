@@ -81,6 +81,13 @@ class ClawService:
     async def get_file(self, user_id: str, session_id: str, filename: str) -> tuple[bytes, str]:
         return await self.domain.get_file(user_id, session_id, filename)
 
+    async def get_vnc_url(self, session_id: str, user_id: str) -> str:
+        """Get the VNC WebSocket URL for a session, ensuring it belongs to
+        the user. Mirrors ``AgentService.get_vnc_url``'s role for the main
+        Manus sandbox, but for the Claw container's optional graphical
+        stack (see ``ClawSession.vnc_url``)."""
+        return await self.domain.get_vnc_url(user_id, session_id)
+
     async def verify_api_key(self, api_key: str) -> Optional[str]:
         return await self.domain.verify_api_key(api_key, self.settings.claw_api_key)
 
