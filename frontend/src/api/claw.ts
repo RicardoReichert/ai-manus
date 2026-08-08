@@ -17,7 +17,7 @@ export interface ClawSession {
 }
 
 export interface ClawEvent {
-  type: 'text' | 'done' | 'error' | 'file' | 'catchup' | 'heartbeat' | 'status';
+  type: 'text' | 'done' | 'error' | 'file' | 'catchup' | 'heartbeat' | 'status' | 'tool';
   content?: string;
   stop_reason?: string;
   error?: string;
@@ -28,6 +28,16 @@ export interface ClawEvent {
   size?: number;
   upload_date?: string;
   file_url?: string;
+  // tool event fields (type: 'tool') — passed through verbatim from the
+  // gateway per Task 5's report, not transformed/renamed by the backend.
+  phase?: 'start' | 'update' | 'result';
+  name?: string;
+  toolCallId?: string;
+  args?: Record<string, unknown>;
+  partialResult?: unknown;
+  result?: unknown;
+  isError?: boolean;
+  meta?: string;
 }
 
 export interface ClawChatAttachment {
@@ -90,6 +100,16 @@ export async function getClawSessionHistory(sessionId: string): Promise<ClawChat
   const response = await apiClient.get<ApiResponse<{ messages: ClawChatMessage[] }>>(`/claw/sessions/${sessionId}/history`);
   return response.data.data.messages;
 }
+
+/**
+ * Returns the WS URL for the Claw session's VNC proxy
+ * (`/ws/claw/vnc/{sessionId}`), mirroring `getVNCUrl`'s BASE_URL-derived
+ * construction in agent.ts.
+ */
+export const getClawVncUrl = (sessionId: string): string => {
+  const wsBase = BASE_URL.replace(/^http/, 'ws');
+  return `${wsBase}/ws/claw/vnc/${sessionId}`;
+};
 
 // ---- WebSocket connection ----
 
@@ -181,6 +201,96 @@ export class ClawWebSocket {
   disconnect() {
     this.closed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.ws?.close();
+    this.ws = null;
+  }
+
+  get isConnected() {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+}
+
+// ---- Terminal WebSocket connection ----
+
+export interface ClawTerminalMessage {
+  type: 'data' | 'exit' | 'error';
+  seq?: number;
+  data?: string;
+  exit_code?: number | null;
+  signal?: number | null;
+  reason?: string;
+  error?: string;
+}
+
+export interface ClawTerminalCallbacks {
+  onMessage: (message: ClawTerminalMessage) => void;
+  onOpen?: () => void;
+  onClose?: () => void;
+}
+
+/**
+ * A single Claw Operator Terminal WS connection (`/ws/claw/terminal/{sessionId}`).
+ * Deliberately minimal — no reconnect/backoff like ClawWebSocket: a terminal
+ * session is short-lived and tied to the panel being open, so a dropped
+ * connection just means the panel shows the session ended; the caller
+ * reopens by constructing a new client if the user wants another shell.
+ */
+export class ClawTerminalClient {
+  private ws: WebSocket | null = null;
+  private callbacks: ClawTerminalCallbacks;
+  private sessionId: string;
+
+  constructor(sessionId: string, callbacks: ClawTerminalCallbacks, cols?: number, rows?: number) {
+    this.sessionId = sessionId;
+    this.callbacks = callbacks;
+
+    const wsBase = BASE_URL.replace(/^http/, 'ws');
+    const params = new URLSearchParams();
+    if (cols) params.set('cols', String(cols));
+    if (rows) params.set('rows', String(rows));
+    const query = params.toString();
+    const url = `${wsBase}/ws/claw/terminal/${this.sessionId}${query ? `?${query}` : ''}`;
+
+    this.ws = new WebSocket(url);
+
+    this.ws.onopen = () => {
+      this.callbacks.onOpen?.();
+    };
+
+    this.ws.onmessage = (e) => {
+      try {
+        const data: ClawTerminalMessage = JSON.parse(e.data);
+        this.callbacks.onMessage(data);
+      } catch {
+        // ignore
+      }
+    };
+
+    this.ws.onclose = () => {
+      this.callbacks.onClose?.();
+    };
+
+    this.ws.onerror = () => {
+      this.ws?.close();
+    };
+  }
+
+  /** Send a chunk of input (e.g. keystrokes) to the PTY. */
+  sendInput(data: string) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'input', data }));
+    }
+  }
+
+  /** Resize the PTY, e.g. on panel/container resize. */
+  resize(cols: number, rows: number) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+    }
+  }
+
+  /** Close the connection. */
+  disconnect() {
     this.ws?.close();
     this.ws = null;
   }
