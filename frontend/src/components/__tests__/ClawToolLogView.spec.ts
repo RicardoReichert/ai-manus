@@ -74,6 +74,62 @@ describe('ClawToolLogView', () => {
     expect(rows[0].findAll('div').some((d) => d.classes().includes('text-[var(--text-secondary)]'))).toBe(false)
   })
 
+  it('entries without argsText/resultText render no chevron and cannot be expanded', () => {
+    const wrapper = mount(ClawToolLogView, {
+      global: { plugins: [i18n] },
+      props: { toolLog: [entry({ id: 'a' })] },
+    })
+
+    expect(wrapper.find('[role="button"]').attributes('tabindex')).toBe('-1')
+    expect(wrapper.text()).not.toContain('Arguments')
+    expect(wrapper.text()).not.toContain('Result')
+  })
+
+  it('clicking a row with details expands Arguments/Result sections, collapsed by default', async () => {
+    const wrapper = mount(ClawToolLogView, {
+      global: { plugins: [i18n] },
+      props: {
+        toolLog: [entry({
+          id: 'a',
+          status: 'success',
+          argsText: '{\n  "command": "ls -la"\n}',
+          resultText: 'file1.txt\nfile2.txt',
+        })],
+      },
+    })
+
+    // Collapsed by default.
+    expect(wrapper.text()).not.toContain('file1.txt')
+    expect(wrapper.find('[role="button"]').attributes('aria-expanded')).toBe('false')
+
+    await wrapper.find('[role="button"]').trigger('click')
+
+    expect(wrapper.find('[role="button"]').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.text()).toContain('Arguments')
+    expect(wrapper.text()).toContain('ls -la')
+    expect(wrapper.text()).toContain('Result')
+    expect(wrapper.text()).toContain('file1.txt')
+
+    // Clicking again collapses it back.
+    await wrapper.find('[role="button"]').trigger('click')
+    expect(wrapper.text()).not.toContain('file1.txt')
+  })
+
+  it('labels the result section "Error" (not "Result") and colors it for an errored entry', async () => {
+    const wrapper = mount(ClawToolLogView, {
+      global: { plugins: [i18n] },
+      props: {
+        toolLog: [entry({ id: 'a', status: 'error', resultText: 'boom: command failed' })],
+      },
+    })
+
+    await wrapper.find('[role="button"]').trigger('click')
+
+    expect(wrapper.text()).toContain('Error')
+    expect(wrapper.text()).not.toContain('Result')
+    expect(wrapper.text()).toContain('boom: command failed')
+  })
+
   it('maps status to the expected dot color class', () => {
     const wrapper = mount(ClawToolLogView, {
       global: { plugins: [i18n] },

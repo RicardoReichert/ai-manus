@@ -266,6 +266,7 @@
       ref="clawComputerPanel"
       :sessionId="activeSession.id"
       :toolLog="toolLog"
+      :terminalResetKey="terminalResetKey"
     />
   </SimpleBar>
 </template>
@@ -285,7 +286,7 @@ import { useFilePreviewer } from '../composables/useFilePreviewer';
 import { useDialog } from '../composables/useDialog';
 import {
   listClawSessions, createClawSession, getClawSession, restartClawSession, deleteClawSession,
-  getClawSessionHistory, ClawWebSocket, summarizeToolArgs,
+  getClawSessionHistory, ClawWebSocket, summarizeToolArgs, stringifyToolValue,
   type ClawSession, type ClawStatus, type ClawEvent, type ClawToolLogEntry,
 } from '../api/claw';
 import { getAvailableModels, type ModelDescriptor } from '../api/model';
@@ -300,6 +301,12 @@ const { showConfirmDialog } = useDialog();
 
 const simpleBarRef = ref<InstanceType<typeof SimpleBar>>();
 const clawComputerPanel = ref<InstanceType<typeof ClawComputerPanel>>();
+// Bumped every time setupWebSocket() (re)establishes a live connection for
+// the active session — forces the Computer panel's Terminal tab to fully
+// unmount/remount (see ClawComputerPanelContent's ClawTerminalView :key), so
+// a session restart or delete-and-switch never leaves a dead terminal
+// connection silently on screen.
+const terminalResetKey = ref(0);
 
 const sessions = ref<ClawSession[]>([]);
 const activeSessionId = ref<string | null>(null);
@@ -589,13 +596,17 @@ const handleToolEvent = (chunk: ClawEvent) => {
   const existing = toolLog.value.find((e) => e.id === id);
 
   if (chunk.phase === 'result') {
+    const resultText = stringifyToolValue(chunk.result);
     if (existing) {
       existing.status = chunk.isError ? 'error' : 'success';
+      if (resultText) existing.resultText = resultText;
     } else {
       toolLog.value.push({
         id,
         name: chunk.name || 'tool',
         argsSummary: summarizeToolArgs(chunk.args),
+        argsText: chunk.args ? stringifyToolValue(chunk.args) : undefined,
+        resultText: resultText || undefined,
         status: chunk.isError ? 'error' : 'success',
         timestamp: Math.floor(Date.now() / 1000),
       });
@@ -604,7 +615,15 @@ const handleToolEvent = (chunk: ClawEvent) => {
   }
 
   if (existing) {
-    if (chunk.args) existing.argsSummary = summarizeToolArgs(chunk.args);
+    if (chunk.args) {
+      existing.argsSummary = summarizeToolArgs(chunk.args);
+      existing.argsText = stringifyToolValue(chunk.args);
+    }
+    // 'update' phase streaming output preview — overwritten by the final
+    // 'result' phase above once the call completes.
+    if (chunk.phase === 'update' && chunk.partialResult !== undefined) {
+      existing.resultText = stringifyToolValue(chunk.partialResult);
+    }
     return;
   }
 
@@ -612,6 +631,7 @@ const handleToolEvent = (chunk: ClawEvent) => {
     id,
     name: chunk.name || 'tool',
     argsSummary: summarizeToolArgs(chunk.args),
+    argsText: chunk.args ? stringifyToolValue(chunk.args) : undefined,
     status: 'running',
     timestamp: Math.floor(Date.now() / 1000),
   });
@@ -685,6 +705,7 @@ const enterSession = async (session: ClawSession) => {
 
   await loadHistory(session.id);
   setupWebSocket(session.id);
+  terminalResetKey.value++;
   if (session.expires_at) startExpiryCountdown(session.expires_at);
   await nextTick();
   follow.value = true;
@@ -768,6 +789,7 @@ const startStatusPolling = (sessionId: string) => {
         stopStatusPolling();
         await loadHistory(sessionId);
         setupWebSocket(sessionId);
+        terminalResetKey.value++;
         if (session.expires_at) startExpiryCountdown(session.expires_at);
         await nextTick();
         follow.value = true;

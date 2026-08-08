@@ -69,6 +69,7 @@
     <div class="flex-1 min-h-0 relative">
       <ClawTerminalView
         v-if="sessionId && viewMode === 'terminal'"
+        :key="`${sessionId}-${terminalResetKey ?? 0}`"
         :sessionId="sessionId" />
       <ClawToolLogView
         v-else-if="viewMode === 'tools'"
@@ -94,9 +95,17 @@ const props = withDefaults(defineProps<{
   sessionId?: string;
   presentation?: 'sidebar' | 'dialog';
   toolLog?: ClawToolLogEntry[];
+  /** Bumped by the page whenever the underlying Claw session was torn down
+   * and a fresh connection was set up (restart or switching sessions) —
+   * combined with sessionId into ClawTerminalView's `:key` so a `v-if`
+   * staying true the whole time (same viewMode) still forces a full
+   * unmount/remount, and therefore a fresh terminal WS connection, instead
+   * of silently keeping the old session's dead connection on screen. */
+  terminalResetKey?: number;
 }>(), {
   presentation: 'sidebar',
   toolLog: () => [],
+  terminalResetKey: 0,
 });
 
 const { t } = useI18n();

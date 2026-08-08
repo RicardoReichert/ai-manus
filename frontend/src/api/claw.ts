@@ -48,6 +48,10 @@ export interface ClawToolLogEntry {
   argsSummary: string;
   status: 'running' | 'success' | 'error';
   timestamp: number;
+  /** Full (untruncated) pretty-printed args, for the row's expanded detail view. */
+  argsText?: string;
+  /** Full (untruncated) pretty-printed result/output, once phase 'result' arrives. */
+  resultText?: string;
 }
 
 /**
@@ -61,6 +65,20 @@ export function summarizeToolArgs(args?: Record<string, unknown>): string {
     return s.length > 80 ? `${s.slice(0, 80)}…` : s;
   } catch {
     return '';
+  }
+}
+
+/**
+ * Untruncated, pretty-printed rendering of a tool call's args/result, for
+ * the tool-log row's expanded detail view (ClawToolLogView.vue).
+ */
+export function stringifyToolValue(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
   }
 }
 

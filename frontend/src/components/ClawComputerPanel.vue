@@ -14,6 +14,7 @@
         presentation="sidebar"
         :sessionId="sessionId"
         :toolLog="toolLog"
+        :terminalResetKey="terminalResetKey"
         @hide="hidePanel"
         @toggle-presentation="togglePresentation"
       />
@@ -32,6 +33,7 @@
           presentation="dialog"
           :sessionId="sessionId"
           :toolLog="toolLog"
+          :terminalResetKey="terminalResetKey"
           @hide="hidePanel"
           @toggle-presentation="togglePresentation"
         />
@@ -65,6 +67,10 @@ const sideWidth = computed(() => {
 defineProps<{
   sessionId?: string
   toolLog?: ClawToolLogEntry[]
+  /** Bumped by ClawPage whenever a fresh terminal connection should replace
+   * the current one (session restarted or switched to another session) —
+   * see ClawComputerPanelContent's use as part of ClawTerminalView's `:key`. */
+  terminalResetKey?: number
 }>()
 
 const showPanel = () => {
