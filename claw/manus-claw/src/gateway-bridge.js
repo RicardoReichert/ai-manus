@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
  * a simple send/receive interface for the HTTP server.
  *
  * Text comes in as: event:agent, payload.stream="assistant", payload.data.delta or .text
+ * Tool calls via:    event:agent, payload.stream="tool", payload.data.phase="start"|"update"|"result"
  * Run ends via:     event:agent, payload.stream="lifecycle", payload.data.phase="end"
  * Run error via:    event:agent, payload.stream="lifecycle", payload.data.phase="error"
  * Fallback end:     event:chat,  payload.state="final"
@@ -13,6 +14,14 @@ import { randomUUID } from 'node:crypto';
  * When the agent calls manus_upload_file, OpenClaw invokes the tool's execute()
  * function directly. execute() calls bridge.notifyFileUploaded() to push a
  * file SSE event to the active frontend request.
+ *
+ * Operator Terminal (real PTY) events arrive as top-level gateway events, not
+ * inside the agent envelope: event:'terminal.data' (payload: {sessionId, seq,
+ * data}) and event:'terminal.exit' (payload: {sessionId, exitCode, signal,
+ * reason, error?}). Because this plugin keeps exactly one privileged operator
+ * connection to the gateway (see gateway-client.js), every terminal session
+ * opened via that connection delivers its events on the same message stream,
+ * disambiguated by payload.sessionId — see registerTerminalHandler().
  */
 export class GatewayBridge {
   constructor({ agentId, logger }) {
@@ -27,6 +36,8 @@ export class GatewayBridge {
     this._gwRequestMap = new Map();
     // Map of runId -> requestId
     this._runIdMap = new Map();
+    // Map of terminal sessionId -> handler object ({ onData, onExit })
+    this._terminalHandlers = new Map();
 
     this._initialized = false;
   }
@@ -67,6 +78,11 @@ export class GatewayBridge {
 
     if (type === 'event' && event === 'chat') {
       this._handleChatEvent(msg.payload);
+      return;
+    }
+
+    if (type === 'event' && (event === 'terminal.data' || event === 'terminal.exit')) {
+      this._handleTerminalEvent(event, msg.payload);
       return;
     }
   }
@@ -120,6 +136,15 @@ export class GatewayBridge {
           }
         }
       }
+      return;
+    }
+
+    if (stream === 'tool') {
+      // data: { phase: 'start'|'update'|'result', name, toolCallId,
+      //         args? (start), partialResult? (update), result? (result),
+      //         isError? (result), meta? }. Forwarded as-is to the HTTP
+      //         layer's SSE writer — see http-server.js's onTool handler.
+      handler.onTool?.(data);
       return;
     }
 
@@ -180,6 +205,63 @@ export class GatewayBridge {
         this._cleanupByReqId(reqId);
       }
     }
+  }
+
+  /**
+   * Dispatch a terminal.data/terminal.exit gateway event to whichever
+   * terminal WS connection registered for that sessionId (see
+   * registerTerminalHandler(), called from http-server.js's terminal WS
+   * upgrade handler).
+   */
+  _handleTerminalEvent(event, payload) {
+    if (!payload || !payload.sessionId) return;
+    const handler = this._terminalHandlers.get(payload.sessionId);
+    if (!handler) return;
+
+    if (event === 'terminal.data') {
+      handler.onData?.(payload);
+      return;
+    }
+
+    if (event === 'terminal.exit') {
+      this.logger?.info?.(`[bridge] terminal exit sessionId=${payload.sessionId} reason=${payload.reason}`);
+      handler.onExit?.(payload);
+      this._terminalHandlers.delete(payload.sessionId);
+    }
+  }
+
+  registerTerminalHandler(sessionId, handlers) {
+    this._terminalHandlers.set(sessionId, handlers);
+    return () => this._terminalHandlers.delete(sessionId);
+  }
+
+  /**
+   * Opens a new Operator Terminal (real PTY) session via the gateway's
+   * terminal.open RPC, scoped to this plugin's agent by default.
+   * Returns { sessionId, agentId, shell, cwd, confined }.
+   */
+  async openTerminal({ agentId, cols, rows } = {}) {
+    if (!this.isGatewayReady()) throw new Error('Gateway not ready');
+    return this.gatewayClient.request('terminal.open', {
+      agentId: agentId || this.agentId,
+      cols: cols || 80,
+      rows: rows || 24,
+    }, 15000);
+  }
+
+  async sendTerminalInput(sessionId, data) {
+    if (!this.isGatewayReady()) throw new Error('Gateway not ready');
+    return this.gatewayClient.request('terminal.input', { sessionId, data }, 10000);
+  }
+
+  async resizeTerminal(sessionId, cols, rows) {
+    if (!this.isGatewayReady()) throw new Error('Gateway not ready');
+    return this.gatewayClient.request('terminal.resize', { sessionId, cols, rows }, 10000);
+  }
+
+  async closeTerminal(sessionId) {
+    if (!this.isGatewayReady()) throw new Error('Gateway not ready');
+    return this.gatewayClient.request('terminal.close', { sessionId }, 10000);
   }
 
   _cleanupByReqId(requestId) {
@@ -282,6 +364,10 @@ export class GatewayBridge {
     for (const reqId of [...this._responseHandlers.keys()]) {
       this._responseHandlers.get(reqId)?.onError?.('Gateway disconnected');
       this._cleanupByReqId(reqId);
+    }
+    for (const [sessionId, handler] of [...this._terminalHandlers.entries()]) {
+      handler.onExit?.({ sessionId, exitCode: null, signal: null, reason: 'disconnected' });
+      this._terminalHandlers.delete(sessionId);
     }
   }
 }
