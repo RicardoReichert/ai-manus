@@ -711,3 +711,84 @@ async def vnc_ws(websocket: WebSocket, session_id: str):
             await websocket.close(code=1011, reason=f"WebSocket error: {str(e)}")
         except Exception:
             pass
+
+
+@router.websocket("/claw/vnc/{session_id}")
+async def claw_vnc_ws(websocket: WebSocket, session_id: str):
+    """Claw sandbox VNC proxy (binary) — Cookie / Bearer auth, no signed URL.
+
+    Mirrors ``vnc_ws`` above, but looks up the session via ``claw_service``
+    (same ownership check as ``/claw/{session_id}``) and resolves the
+    target VNC URL via ``claw_service.get_vnc_url``.
+
+    Client should negotiate subprotocol ``binary`` (NoVNC default).
+    """
+    try:
+        user = await resolve_ws_user(websocket)
+    except Exception:
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+
+    claw_service = get_claw_service()
+    session = await claw_service.get_session(user.id, session_id)
+    if not session:
+        await websocket.close(code=4004, reason="Claw session not found")
+        return
+
+    await websocket.accept(subprotocol="binary")
+    logger.info("Accepted Claw VNC WS for session %s user %s", session_id, user.id)
+
+    try:
+        claw_vnc_url = await claw_service.get_vnc_url(session_id, user.id)
+        logger.info("Connecting to Claw VNC at %s", claw_vnc_url)
+
+        async with websockets.connect(claw_vnc_url) as claw_ws:
+            async def forward_to_claw() -> None:
+                try:
+                    while True:
+                        data = await websocket.receive_bytes()
+                        await claw_ws.send(data)
+                except WebSocketDisconnect:
+                    logger.info("Web -> Claw VNC connection closed")
+                except Exception as e:
+                    logger.error("Error forwarding data to Claw VNC: %s", e)
+
+            async def forward_from_claw() -> None:
+                try:
+                    while True:
+                        data = await claw_ws.recv()
+                        await websocket.send_bytes(data)
+                except websockets.exceptions.ConnectionClosed:
+                    logger.info("Claw VNC -> Web connection closed")
+                except Exception as e:
+                    logger.error("Error forwarding data from Claw VNC: %s", e)
+
+            forward_task1 = asyncio.create_task(forward_to_claw())
+            forward_task2 = asyncio.create_task(forward_from_claw())
+            _done, pending = await asyncio.wait(
+                [forward_task1, forward_task2],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+    except ValueError as e:
+        logger.error("Claw VNC unavailable for session %s: %s", session_id, e)
+        try:
+            await websocket.close(code=4004, reason=str(e))
+        except Exception:
+            pass
+    except ConnectionError as e:
+        logger.error("Unable to connect to Claw environment: %s", e)
+        try:
+            await websocket.close(
+                code=1011,
+                reason=f"Unable to connect to Claw environment: {str(e)}",
+            )
+        except Exception:
+            pass
+    except Exception as e:
+        logger.error("Claw VNC WebSocket error: %s", e)
+        try:
+            await websocket.close(code=1011, reason=f"WebSocket error: {str(e)}")
+        except Exception:
+            pass
