@@ -23,6 +23,15 @@
         <button
           type="button"
           class="h-6 rounded-[6px] px-[10px] text-[12px] font-[500] transition-colors"
+          :class="viewMode === 'agent'
+            ? 'bg-[var(--background-gray-main)] text-[var(--text-primary)]'
+            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'"
+          @click="viewMode = 'agent'">
+          {{ t('Agent') }}
+        </button>
+        <button
+          type="button"
+          class="h-6 rounded-[6px] px-[10px] text-[12px] font-[500] transition-colors"
           :class="viewMode === 'terminal'
             ? 'bg-[var(--background-gray-main)] text-[var(--text-primary)]'
             : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'"
@@ -84,6 +93,9 @@
       <ComputerInactiveEmpty
         v-else-if="sessionId && viewMode === 'screen' && vncDisconnected"
         name="Manus Claw" />
+      <ClawAgentTerminalView
+        v-else-if="viewMode === 'agent'"
+        :event="agentToolEvent" />
       <ClawTerminalView
         v-else-if="sessionId && viewMode === 'terminal'"
         :sessionId="sessionId" />
@@ -113,26 +125,35 @@ import { useI18n } from 'vue-i18n';
 import { X } from 'lucide-vue-next';
 import VNCViewer from './VNCViewer.vue';
 import ClawTerminalView from './ClawTerminalView.vue';
+import ClawAgentTerminalView from './ClawAgentTerminalView.vue';
 import ClawToolLogView from './ClawToolLogView.vue';
 import ComputerInactiveEmpty from './ComputerInactiveEmpty.vue';
-import { getClawVncUrl, type ClawToolLogEntry } from '@/api/claw';
+import { getClawVncUrl, type ClawEvent, type ClawToolLogEntry } from '@/api/claw';
 import CenterViewIcon from './icons/CenterViewIcon.vue';
 import SideViewIcon from './icons/SideViewIcon.vue';
 import TakeOverIcon from './icons/TakeOverIcon.vue';
 import { eventBus } from '@/utils/eventBus';
 
+export type ClawComputerViewMode = 'screen' | 'agent' | 'terminal' | 'tools';
+
 const props = withDefaults(defineProps<{
   sessionId?: string;
   presentation?: 'sidebar' | 'dialog';
   toolLog?: ClawToolLogEntry[];
+  agentToolEvent?: ClawEvent | null;
+  /** Tab to land on when this instance mounts (the component fully
+   * unmounts/remounts on hide/show, so this only needs to be read once). */
+  initialView?: ClawComputerViewMode;
 }>(), {
   presentation: 'sidebar',
   toolLog: () => [],
+  agentToolEvent: null,
+  initialView: 'screen',
 });
 
 const { t } = useI18n();
 const isMobile = useMediaQuery('(max-width: 767px)');
-const viewMode = ref<'screen' | 'terminal' | 'tools'>('screen');
+const viewMode = ref<ClawComputerViewMode>(props.initialView);
 const vncDisconnected = ref(false);
 
 watch(() => props.sessionId, () => {

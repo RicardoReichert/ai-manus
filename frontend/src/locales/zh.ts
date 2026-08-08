@@ -283,6 +283,7 @@ export default {
   // Tool names
   'Terminal': '终端',
   'No tool activity yet': '暂无工具活动',
+  'No agent activity yet': '暂无代理活动',
   'Done': '完成',
   'File': '文件',
   'Browser': '浏览器',

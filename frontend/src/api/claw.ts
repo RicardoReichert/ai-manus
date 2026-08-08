@@ -50,6 +50,22 @@ export interface ClawToolLogEntry {
   timestamp: number;
 }
 
+/**
+ * Compact, human-readable one-line summary of a tool call's `args`, shared
+ * between the tool-log list (ClawToolLogEntry.argsSummary) and the
+ * agent-activity terminal echo (ClawAgentTerminalView) so both render the
+ * same "$ <name> <args>" shorthand for a given call.
+ */
+export function summarizeToolArgs(args?: Record<string, unknown>): string {
+  if (!args || Object.keys(args).length === 0) return '';
+  try {
+    const s = JSON.stringify(args);
+    return s.length > 80 ? `${s.slice(0, 80)}…` : s;
+  } catch {
+    return '';
+  }
+}
+
 export interface ClawChatAttachment {
   file_id: string;
   filename: string;

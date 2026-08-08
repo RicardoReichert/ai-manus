@@ -284,6 +284,7 @@ export default {
   // Tool names
   'Terminal': 'Terminal',
   'No tool activity yet': 'No tool activity yet',
+  'No agent activity yet': 'No agent activity yet',
   'Done': 'Done',
   'File': 'File',
   'Browser': 'Browser',

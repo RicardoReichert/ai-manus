@@ -17,11 +17,12 @@ const i18n = createI18n({
 // about ClawComputerPanel's own show/hide/presentation plumbing.
 const ContentStub = defineComponent({
   name: 'ClawComputerPanelContentStub',
-  props: ['presentation', 'sessionId', 'toolLog'],
+  props: ['presentation', 'sessionId', 'toolLog', 'agentToolEvent', 'initialView'],
   emits: ['hide', 'toggle-presentation'],
   setup(props, { emit }) {
     return () => h('div', { class: 'content-stub' }, [
       h('span', { class: 'presentation' }, props.presentation),
+      h('span', { class: 'initial-view' }, props.initialView),
       h('button', { class: 'hide-btn', onClick: () => emit('hide') }, 'hide'),
       h('button', { class: 'toggle-btn', onClick: () => emit('toggle-presentation') }, 'toggle'),
     ])
@@ -68,6 +69,30 @@ describe('ClawComputerPanel', () => {
     expect(wrapper.vm.isShow).toBe(true)
     expect(wrapper.find('.content-stub').exists()).toBe(true)
     expect(wrapper.find('.presentation').text()).toBe('sidebar')
+    expect(wrapper.find('.initial-view').text()).toBe('screen')
+  })
+
+  it('showPanel("agent") tells the content component to land on the Agent tab', async () => {
+    const wrapper = mountPanel()
+
+    wrapper.vm.showPanel('agent')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.initial-view').text()).toBe('agent')
+  })
+
+  it('a later plain showPanel() (no arg) goes back to defaulting to screen', async () => {
+    const wrapper = mountPanel()
+
+    wrapper.vm.showPanel('agent')
+    await wrapper.vm.$nextTick()
+    wrapper.vm.hidePanel()
+    await wrapper.vm.$nextTick()
+
+    wrapper.vm.showPanel()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.initial-view').text()).toBe('screen')
   })
 
   it('hidePanel() hides the panel and resets presentation back to sidebar', async () => {
@@ -109,14 +134,15 @@ describe('ClawComputerPanel', () => {
     expect(wrapper.vm.isShow).toBe(false)
   })
 
-  it('passes sessionId and toolLog through to the content component', async () => {
+  it('passes sessionId, toolLog, and agentToolEvent through to the content component', async () => {
     const toolLog = [{ id: '1', name: 'shell_exec', argsSummary: '', status: 'running' as const, timestamp: Date.now() }]
+    const agentToolEvent = { type: 'tool' as const, phase: 'start' as const, name: 'shell_exec', toolCallId: 'c1' }
     const wrapper = mount(ClawComputerPanel, {
       global: {
         plugins: [i18n],
         stubs: { ClawComputerPanelContent: ContentStub },
       },
-      props: { sessionId: 'sess-42', toolLog },
+      props: { sessionId: 'sess-42', toolLog, agentToolEvent },
     })
 
     wrapper.vm.showPanel()
@@ -125,5 +151,6 @@ describe('ClawComputerPanel', () => {
     const content = wrapper.findComponent(ContentStub)
     expect(content.props('sessionId')).toBe('sess-42')
     expect(content.props('toolLog')).toEqual(toolLog)
+    expect(content.props('agentToolEvent')).toEqual(agentToolEvent)
   })
 })

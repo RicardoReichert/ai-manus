@@ -5,7 +5,7 @@ import { createI18n } from 'vue-i18n'
 import en from '@/locales/en'
 import ClawComputerPanelContent from '../ClawComputerPanelContent.vue'
 import { eventBus } from '@/utils/eventBus'
-import { getClawVncUrl, type ClawToolLogEntry } from '@/api/claw'
+import { getClawVncUrl, type ClawEvent, type ClawToolLogEntry } from '@/api/claw'
 
 const i18n = createI18n({
   legacy: false,
@@ -35,15 +35,32 @@ const ClawTerminalViewStub = defineComponent({
   },
 })
 
+// Real xterm.js setup/teardown for ClawAgentTerminalView is covered by its
+// own spec (ClawAgentTerminalView.spec.ts) — stub it here too so this file
+// stays focused on ClawComputerPanelContent's own tab-switching/prop-passing.
+const ClawAgentTerminalViewStub = defineComponent({
+  name: 'ClawAgentTerminalViewStub',
+  props: ['event'],
+  setup(props) {
+    return () => h('div', { class: 'agent-stub' }, props.event ? JSON.stringify(props.event) : '')
+  },
+})
+
 function mountContent(props: {
   sessionId?: string
   presentation?: 'sidebar' | 'dialog'
   toolLog?: ClawToolLogEntry[]
+  agentToolEvent?: ClawEvent | null
+  initialView?: 'screen' | 'agent' | 'terminal' | 'tools'
 } = {}) {
   return mount(ClawComputerPanelContent, {
     global: {
       plugins: [i18n],
-      stubs: { VNCViewer: VNCViewerStub, ClawTerminalView: ClawTerminalViewStub },
+      stubs: {
+        VNCViewer: VNCViewerStub,
+        ClawTerminalView: ClawTerminalViewStub,
+        ClawAgentTerminalView: ClawAgentTerminalViewStub,
+      },
     },
     props: { sessionId: 'sess-1', ...props },
   })
@@ -126,6 +143,32 @@ describe('ClawComputerPanelContent', () => {
 
     expect(wrapper.findAll('button').some((b) => b.text().includes('Take control'))).toBe(false)
     expect(handler).not.toHaveBeenCalled()
+  })
+
+  it('switches to Agent mode and forwards the raw tool event to ClawAgentTerminalView', async () => {
+    const event: ClawEvent = { type: 'tool', phase: 'start', name: 'shell_exec', toolCallId: 'c1' }
+    const wrapper = mountContent({ agentToolEvent: event })
+
+    await wrapper.findAll('button').find((b) => b.text() === 'Agent')!.trigger('click')
+
+    const agentStub = wrapper.find('.agent-stub')
+    expect(agentStub.exists()).toBe(true)
+    expect(JSON.parse(agentStub.text())).toEqual(event)
+    expect(wrapper.find('.vnc-stub').exists()).toBe(false)
+  })
+
+  it('honors the initialView prop so the panel can land on a non-default tab', () => {
+    const wrapper = mountContent({ initialView: 'agent' })
+
+    expect(wrapper.find('.agent-stub').exists()).toBe(true)
+    expect(wrapper.find('.vnc-stub').exists()).toBe(false)
+  })
+
+  it('defaults to the screen tab when initialView is omitted', () => {
+    const wrapper = mountContent()
+
+    expect(wrapper.find('.vnc-stub').exists()).toBe(true)
+    expect(wrapper.find('.agent-stub').exists()).toBe(false)
   })
 
   it('the Close button emits "hide"', async () => {
