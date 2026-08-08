@@ -514,6 +514,7 @@ async def claw_ws(websocket: WebSocket, session_id: str):
     Server → Client:
       {"type":"text","content":"..."}
       {"type":"file",...}
+      {"type":"tool","phase":"start"|"update"|"result","name":"...","toolCallId":"...",...}
       {"type":"done","stop_reason":"..."}
       {"type":"error","error":"..."}
       {"type":"catchup","content":"..."}
