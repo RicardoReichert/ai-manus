@@ -10,6 +10,7 @@ mocking convention already used in ``test_claw_lifecycle.py`` and
 ``test_claw_shared_container_model_resolution.py``.
 """
 from typing import List, Optional
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -113,7 +114,13 @@ async def test_get_vnc_url_returns_ws_url_for_owned_session():
     session = _session(container_ip="10.0.0.5")
     domain = _build_domain_service(session)
 
-    url = await domain.get_vnc_url("user-1", "sess-1")
+    # get_session()'s _check_expiry health-checks a RUNNING session's
+    # http_base_url over real httpx before returning it; stub that out so
+    # the test doesn't depend on 10.0.0.5:18788 being reachable (it isn't,
+    # in CI or locally), which would otherwise flip the session to STOPPED
+    # and mask the very case this test is meant to cover.
+    with patch.object(ClawDomainService, "_health_check", AsyncMock(return_value=True)):
+        url = await domain.get_vnc_url("user-1", "sess-1")
 
     assert url == "ws://10.0.0.5:5901"
 
@@ -126,7 +133,8 @@ async def test_get_vnc_url_via_application_service_matches_documented_signature(
     domain = _build_domain_service(session)
     service = ClawService(domain)
 
-    url = await service.get_vnc_url("sess-1", "user-1")
+    with patch.object(ClawDomainService, "_health_check", AsyncMock(return_value=True)):
+        url = await service.get_vnc_url("sess-1", "user-1")
 
     assert url == "ws://10.0.0.5:5901"
 
@@ -146,6 +154,22 @@ async def test_get_vnc_url_raises_for_missing_session():
 
     with pytest.raises(ValueError):
         await domain.get_vnc_url("user-1", "does-not-exist")
+
+
+@pytest.mark.asyncio
+async def test_get_vnc_url_raises_for_stopped_session_with_stale_container_ip():
+    """The gap the reviewer found: ``_check_expiry`` marks a session
+    STOPPED on a failed health check but only the expiry-timeout branch
+    clears ``container_ip`` — so a session whose container just died can
+    still carry a non-None ``container_ip``/``vnc_url``. Modeled directly
+    (STOPPED status + populated container_ip) rather than through
+    ``_check_expiry``'s health-check path, since that's the exact state it
+    produces and is more direct to construct here."""
+    session = _session(container_ip="10.0.0.5", status=ClawStatus.STOPPED)
+    domain = _build_domain_service(session)
+
+    with pytest.raises(ValueError):
+        await domain.get_vnc_url("user-1", "sess-1")
 
 
 @pytest.mark.asyncio
