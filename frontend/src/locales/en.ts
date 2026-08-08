@@ -603,4 +603,7 @@ export default {
   'Stopped': 'Stopped',
   'This permanently deletes its memory and cannot be undone. To just switch models, use the model dropdown instead — it restarts without losing history.': 'This permanently deletes its memory and cannot be undone. To just switch models, use the model dropdown instead — it restarts without losing history.',
   'This session’s container stopped. Its memory is preserved — restart to continue.': 'This session’s container stopped. Its memory is preserved — restart to continue.',
+
+  // Claw Computer Panel
+  "{name}'s screen": "{name}'s screen",
 }

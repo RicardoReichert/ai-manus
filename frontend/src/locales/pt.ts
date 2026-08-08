@@ -603,4 +603,7 @@ export default {
   'Stopped': 'Parada',
   'This permanently deletes its memory and cannot be undone. To just switch models, use the model dropdown instead — it restarts without losing history.': 'Isso apaga a memória permanentemente e não pode ser desfeito. Para apenas trocar de modelo, use o seletor de modelo — ele reinicia sem perder o histórico.',
   'This session’s container stopped. Its memory is preserved — restart to continue.': 'O container desta sessão parou. A memória está preservada — reinicie para continuar.',
+
+  // Claw Computer Panel
+  "{name}'s screen": "Tela de {name}",
 }

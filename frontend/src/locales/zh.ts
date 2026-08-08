@@ -602,4 +602,7 @@ export default {
   'Stopped': '已停止',
   'This permanently deletes its memory and cannot be undone. To just switch models, use the model dropdown instead — it restarts without losing history.': '这将永久删除其记忆，且无法撤销。如果只是想切换模型，请改用模型下拉菜单——它会在不丢失历史记录的情况下重启。',
   'This session’s container stopped. Its memory is preserved — restart to continue.': '此会话的容器已停止。记忆已保留——重启即可继续。',
+
+  // Claw Computer Panel
+  "{name}'s screen": "{name} 的屏幕",
 }
