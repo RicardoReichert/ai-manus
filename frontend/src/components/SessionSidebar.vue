@@ -89,7 +89,7 @@
           class="flex items-center rounded-[10px] clickable cursor-pointer transition-colors w-full gap-[8px] h-[36px] pointer-events-auto ps-[8px] pe-[2px]"
           :class="route.path === '/chat/claw' ? 'bg-[var(--fill-tsp-white-main)]' : 'hover:bg-[var(--fill-tsp-white-light)]'">
           <div class="shrink-0 size-[20px] flex items-center justify-center">
-            <div class="claw-nav-icon w-[18px] h-[18px]" />
+            <ClawIcon :size="18" class="text-[var(--icon-primary)]" />
           </div>
           <div v-if="isSessionSidebarShow" class="flex-1 min-w-0 flex gap-[4px] items-center text-[14px] text-[var(--text-primary)]">
             <span class="truncate">Manus Claw</span>
@@ -198,7 +198,8 @@
                       @shared="handleSessionShared"
                       @favorited="handleSessionFavorited"
                       @pinned="handleSessionPinned"
-                      @moved="handleSessionMoved" />
+                      @moved="handleSessionMoved"
+                      @archived="handleSessionArchived" />
                     <div
                       v-if="sessionsForProject(project.project_id).length === 0"
                       class="flex items-center ps-[36px] pe-[8px] h-[36px]">
@@ -310,7 +311,8 @@
                       @shared="handleSessionShared"
                       @favorited="handleSessionFavorited"
                       @pinned="handleSessionPinned"
-                      @moved="handleSessionMoved" />
+                      @moved="handleSessionMoved"
+                      @archived="handleSessionArchived" />
                     <div
                       v-if="sessionsForProject(project.project_id).length === 0"
                       class="flex items-center ps-[36px] pe-[8px] h-[36px]">
@@ -372,7 +374,8 @@
                   @shared="handleSessionShared"
                   @favorited="handleSessionFavorited"
                   @pinned="handleSessionPinned"
-                  @moved="handleSessionMoved" />
+                  @moved="handleSessionMoved"
+                  @archived="handleSessionArchived" />
               </div>
               <div v-else class="flex flex-col items-center justify-center gap-4 py-8">
                 <div class="flex flex-col items-center gap-2 text-[var(--text-tertiary)]">
@@ -409,11 +412,7 @@
               class="flex min-w-0 ps-[2px] items-center gap-[8px] clickable cursor-pointer hover:opacity-70 p-[2px] text-[var(--text-primary)] text-sm font-[500]"
               aria-expanded="false" aria-haspopup="dialog">
               <div class="relative flex items-center justify-center font-bold cursor-pointer flex-shrink-0">
-                <div
-                  class="relative flex items-center justify-center font-bold flex-shrink-0 rounded-full overflow-hidden"
-                  style="width: 28px; height: 28px; font-size: 14px; color: rgba(255, 255, 255, 0.9); background-color: rgb(59, 130, 246);">
-                  {{ avatarLetter }}
-                </div>
+                <UserAvatar :avatar-url="currentUser?.avatar_url" :fallback-letter="avatarLetter" :size="28" />
               </div>
               <span v-if="isSessionSidebarShow" class="truncate">
                 {{ currentUser?.fullname || t('Unknown User') }}
@@ -441,10 +440,13 @@ import {
 import SessionItem from './SessionItem.vue';
 import UserMenu from './UserMenu.vue';
 import SearchDialog from './SearchDialog.vue';
+import UserAvatar from './UserAvatar.vue';
 import ManusLogoTextIcon from './icons/ManusLogoTextIcon.vue';
+import ClawIcon from './icons/ClawIcon.vue';
 import { useSessionSidebar } from '../composables/useSessionSidebar';
 import { useAuth } from '../composables/useAuth';
 import { useDialog } from '../composables/useDialog';
+import { useShortcuts } from '../composables/useShortcuts';
 import { useContextMenu, createMenuItem, createDangerMenuItem } from '../composables/useContextMenu';
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -471,6 +473,14 @@ const cancelSessionsListWS = ref<(() => void) | null>(null)
 
 const upsertSessionItem = (item: ListSessionItem) => {
   const rest = sessions.value.filter(s => s.session_id !== item.session_id)
+  // The upsert push (unlike the initial snapshot / GET /sessions) isn't
+  // filtered server-side — an item that got archived elsewhere (another
+  // tab, the ChatPage "..." menu) would otherwise reappear here the moment
+  // its WS upsert arrives. Drop it instead, same as an explicit removal.
+  if (item.is_archived) {
+    sessions.value = rest
+    return
+  }
   const next = [...rest, item]
   next.sort((a, b) => (b.latest_message_at ?? 0) - (a.latest_message_at ?? 0))
   sessions.value = next
@@ -526,8 +536,8 @@ const { currentUser } = useAuth()
 const showUserMenu = ref(false)
 const profileRef = ref<HTMLElement | null>(null)
 
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
-const newTaskShortcut = computed(() => (isMac ? '⌘K' : 'Ctrl K'))
+const { bindings: shortcutBindings, matches: matchesShortcut, formatBinding } = useShortcuts()
+const newTaskShortcut = computed(() => formatBinding(shortcutBindings.value['new-task']).join(' '))
 
 const avatarLetter = computed(() => {
   return currentUser.value?.fullname?.charAt(0)?.toUpperCase() || 'M'
@@ -795,8 +805,13 @@ const handleSessionMoved = (sessionId: string, projectId: string | null) => {
   }
 }
 
+const handleSessionArchived = (sessionId: string, _isArchived: boolean) => {
+  // Default sidebar view excludes archived sessions — same removal as delete.
+  sessions.value = sessions.value.filter(session => session.session_id !== sessionId)
+}
+
 const handleKeydown = (event: KeyboardEvent) => {
-  if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+  if (matchesShortcut('new-task', event)) {
     event.preventDefault()
     handleNewTaskClick()
   }
@@ -832,14 +847,3 @@ watch(() => route.path, async () => {
   await updateSessions()
 })
 </script>
-
-<style scoped>
-.claw-nav-icon {
-  background: url("data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20width='20'%20height='20'%20fill='none'%20viewBox='0%200%2020%2020'%20opacity='0.84'%3e%3cpath%20fill='%23333'%20fill-opacity='.9'%20fill-rule='evenodd'%20d='M5.724%204.379c3.934-3.078%207.519-2.009%208.808-.972.675.543%201.05%201.332.97%202.126-.082.823-.64%201.509-1.529%201.805-.463.155-.831.552-.998%201.034-.168.485-.1.942.144%201.24l.027.035a1%201%200%200%201%20.077.018c.265.08.413.122.617.076.202-.046.58-.215%201.13-.88l.127-.136a1.44%201.44%200%200%201%201.082-.402c.418.022.797.215%201.075.482.32.31.466.77.526%201.17.065.43.051.928-.057%201.434-.217%201.017-.837%202.142-2.09%202.82-.402.217-1.098.61-2.146.663a5%205%200%200%201-.376.504c-1.007%201.196-2.394%201.608-3.628%201.57a5.1%205.1%200%200%201-1.6-.312%203.4%203.4%200%200%201-.612.59c-.413.298-.985.518-1.667.347-1.319-.33-2.607-1.6-3.249-3.17-.344-.843-.14-1.573.285-2.087.228-.275.509-.48.777-.624a7.4%207.4%200%200%201-.33-2.307c.037-1.671.705-3.512%202.637-5.024m7.867.197c-.748-.602-3.56-1.662-6.942.985-1.551%201.213-2.034%202.618-2.061%203.874a6.1%206.1%200%200%200%20.805%203.094.75.75%200%200%201-1.29.766q-.05-.09-.103-.188a1%201%200%200%200-.203.182.47.47%200%200%200-.11.22.6.6%200%200%200%20.057.343c.515%201.26%201.491%202.1%202.225%202.285.138.035.262.008.425-.11q.096-.07.188-.167a3%203%200%200%201-.137-.145.75.75%200%200%201%201.136-.98c.294.34%201.034.704%201.948.732.877.027%201.782-.262%202.435-1.037.652-.774.809-1.508.746-2.142-.063-.632-.354-1.218-.711-1.672-.13-.103-.398-.251-.777-.376a4.1%204.1%200%200%200-1.234-.213.75.75%200%200%201%200-1.5c.469%200%20.955.077%201.4.198.017-.29.076-.576.169-.844.297-.856.974-1.644%201.942-1.966.378-.127.492-.348.51-.532.022-.213-.074-.53-.418-.807m2.527%205.25c-.675.81-1.314%201.235-1.947%201.378q-.082.017-.160.027c.093.287.16.591.192.91a4%204%200%200%201-.046%201.116c.299-.098.542-.23.763-.349.79-.428%201.19-1.134%201.336-1.812.073-.341.077-.657.04-.898-.033-.222-.087-.31-.09-.319a.3.3%200%200%200-.067-.046q-.013-.006-.021-.007'%20clip-rule='evenodd'%20/%3e%3c%2fsvg%3e") no-repeat center;
-  background-size: contain;
-}
-
-:global(.dark) .claw-nav-icon {
-  background-image: url("data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20width='20'%20height='20'%20fill='none'%20viewBox='0%200%2020%2020'%20opacity='0.84'%3e%3cpath%20fill='%23fff'%20fill-opacity='.9'%20fill-rule='evenodd'%20d='M5.724%204.379c3.934-3.078%207.519-2.009%208.808-.972.675.543%201.05%201.332.97%202.126-.082.823-.64%201.509-1.529%201.805-.463.155-.831.552-.998%201.034-.168.485-.1.942.144%201.24l.027.035a1%201%200%200%201%20.077.018c.265.08.413.122.617.076.202-.046.58-.215%201.13-.88l.127-.136a1.44%201.44%200%200%201%201.082-.402c.418.022.797.215%201.075.482.32.31.466.77.526%201.17.065.43.051.928-.057%201.434-.217%201.017-.837%202.142-2.09%202.82-.402.217-1.098.61-2.146.663a5%205%200%200%201-.376.504c-1.007%201.196-2.394%201.608-3.628%201.57a5.1%205.1%200%200%201-1.6-.312%203.4%203.4%200%200%201-.612.59c-.413.298-.985.518-1.667.347-1.319-.33-2.607-1.6-3.249-3.17-.344-.843-.14-1.573.285-2.087.228-.275.509-.48.777-.624a7.4%207.4%200%200%201-.33-2.307c.037-1.671.705-3.512%202.637-5.024m7.867.197c-.748-.602-3.56-1.662-6.942.985-1.551%201.213-2.034%202.618-2.061%203.874a6.1%206.1%200%200%200%20.805%203.094.75.75%200%200%201-1.29.766q-.05-.09-.103-.188a1%201%200%200%200-.203.182.47.47%200%200%200-.11.22.6.6%200%200%200%20.057.343c.515%201.26%201.491%202.1%202.225%202.285.138.035.262.008.425-.11q.096-.07.188-.167a3%203%200%200%201-.137-.145.75.75%200%200%201%201.136-.98c.294.34%201.034.704%201.948.732.877.027%201.782-.262%202.435-1.037.652-.774.809-1.508.746-2.142-.063-.632-.354-1.218-.711-1.672-.13-.103-.398-.251-.777-.376a4.1%204.1%200%200%200-1.234-.213.75.75%200%200%201%200-1.5c.469%200%20.955.077%201.4.198.017-.29.076-.576.169-.844.297-.856.974-1.644%201.942-1.966.378-.127.492-.348.51-.532.022-.213-.074-.53-.418-.807m2.527%205.25c-.675.81-1.314%201.235-1.947%201.378q-.082.017-.160.027c.093.287.16.591.192.91a4%204%200%200%201-.046%201.116c.299-.098.542-.23.763-.349.79-.428%201.19-1.134%201.336-1.812.073-.341.077-.657.04-.898-.033-.222-.087-.31-.09-.319a.3.3%200%200%200-.067-.046q-.013-.006-.021-.007'%20clip-rule='evenodd'%20/%3e%3c%2fsvg%3e");
-}
-</style>

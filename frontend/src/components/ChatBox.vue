@@ -28,6 +28,11 @@
             @select="handlePlusSelect"
           />
         </div>
+        <button type="button" @click="uploadFile"
+          class="rounded-full inline-flex items-center justify-center clickable cursor-pointer text-[var(--text-secondary)] hover:bg-[var(--fill-tsp-white-light)] w-8 h-8 p-0 shrink-0"
+          :title="t('Add local files')">
+          <Paperclip :size="18" />
+        </button>
         <div class="flex gap-1.5 ml-auto items-center">
           <button v-if="!isRunning || sendEnabled || hideStopButton"
             class="inline-flex items-center justify-center whitespace-nowrap font-medium transition-colors text-sm rounded-full p-0 w-8 h-8 min-w-0 hover:opacity-90"
@@ -51,6 +56,16 @@
       test-id="chatbox-slash-menu"
       @select="handleSlashSelect"
     />
+    <LibraryPickerDialog
+      :visible="showLibraryPicker"
+      @close="showLibraryPicker = false"
+      @select="handleLibrarySelect"
+    />
+    <RecentTasksPickerDialog
+      :visible="showRecentTasksPicker"
+      @close="showRecentTasksPicker = false"
+      @select="handleRecentTaskSelect"
+    />
   </div>
 </template>
 
@@ -71,15 +86,21 @@ import {
   createSlashSuggestion,
   type SlashItem,
 } from './chatbox/slashSuggestion'
-import { Plus } from 'lucide-vue-next'
+import { Plus, Paperclip } from 'lucide-vue-next'
 import type { FileInfo } from '../api/file'
 import type { Range } from '@tiptap/core'
+import LibraryPickerDialog from './chatbox/LibraryPickerDialog.vue'
+import RecentTasksPickerDialog from './chatbox/RecentTasksPickerDialog.vue'
+import type { ListSessionItem } from '../types/response'
+import { eventBus, UI_OPEN_PLAN_PANEL } from '../utils/eventBus'
 
 const { t } = useI18n()
 const hasTextInput = ref(false)
 const chatBoxFileListRef = ref()
 const showPlusMenu = ref(false)
 const plusMenuRef = ref<HTMLElement | null>(null)
+const showLibraryPicker = ref(false)
+const showRecentTasksPicker = ref(false)
 
 const slashMenuOpen = ref(false)
 const slashMenuItems = ref<SlashItem[]>([])
@@ -90,6 +111,9 @@ let slashRange: Range | null = null
 
 const plusMenuItems: SlashMenuItem[] = [
   { id: 'add_local_files', titleKey: 'Add local files' },
+  { id: 'from_library', titleKey: 'From Library' },
+  { id: 'recent_tasks', titleKey: 'Recent Tasks' },
+  { id: 'plan', titleKey: 'Plan (Ctrl+/)' },
 ]
 const plusMenuPositionStyle = {
   position: 'absolute',
@@ -99,7 +123,7 @@ const plusMenuPositionStyle = {
 
 const props = withDefaults(defineProps<{
   modelValue: string
-  rows: number
+  rows?: number
   isRunning: boolean
   attachments: FileInfo[]
   hideStopButton?: boolean
@@ -151,9 +175,43 @@ const runAddLocalFiles = () => {
   uploadFile()
 }
 
-const handlePlusSelect = (_item: SlashMenuItem) => {
+const openPlanPanel = () => {
   showPlusMenu.value = false
+  slashMenuOpen.value = false
+  eventBus.emit(UI_OPEN_PLAN_PANEL)
+}
+
+const handlePlusSelect = (item: SlashMenuItem) => {
+  showPlusMenu.value = false
+  if (item.id === 'from_library') {
+    showLibraryPicker.value = true
+    return
+  }
+  if (item.id === 'recent_tasks') {
+    showRecentTasksPicker.value = true
+    return
+  }
+  if (item.id === 'plan') {
+    openPlanPanel()
+    return
+  }
   uploadFile()
+}
+
+const handleLibrarySelect = (file: FileInfo) => {
+  showLibraryPicker.value = false
+  // No 'status' field: ChatBoxFiles.vue only special-cases 'uploading'/'failed',
+  // so an already-uploaded FileInfo without a status renders as done.
+  emit('update:attachments', [...props.attachments, file])
+}
+
+const handleRecentTaskSelect = (session: ListSessionItem) => {
+  showRecentTasksPicker.value = false
+  const title = session.title || t('New Chat')
+  const reference = t('Regarding task "{title}": ', { title })
+  const current = props.modelValue ? `${props.modelValue} ` : ''
+  emit('update:modelValue', current + reference)
+  focus()
 }
 
 const handleSlashSelect = (item: SlashMenuItem) => {
@@ -209,7 +267,6 @@ const editor = useEditor({
       codeBlock: false,
       blockquote: false,
       horizontalRule: false,
-      // keep bold/italic/lists/hardBreak
     }),
     Placeholder.configure({ placeholder: () => placeholderText.value }),
     createSlashSuggestion({
@@ -219,7 +276,6 @@ const editor = useEditor({
         if (!open) {
           slashMenuItems.value = []
           slashCommand = null
-          // Keep slashRange until select/onStart so mouse click after blur can still delete `/`
         }
       },
       render: {
@@ -232,7 +288,6 @@ const editor = useEditor({
         onExit: () => {
           slashMenuItems.value = []
           slashCommand = null
-          // Keep slashRange for pending mouse click after focus steal
         },
         onKeyDown: ({ event }) => {
           if (!slashMenuOpen.value || slashMenuItems.value.length === 0) return false
@@ -286,6 +341,11 @@ const editor = useEditor({
           return true
         }
       }
+      if (event.key === '/' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault()
+        openPlanPanel()
+        return true
+      }
       return false
     },
   },
@@ -309,13 +369,11 @@ watch(() => props.modelValue, (val) => {
   syncModelToEditor(val ?? '')
 })
 
-// Retry inbound sync once the editor becomes ready (missed early modelValue).
 watch(editor, (ed) => {
   if (ed) syncModelToEditor(props.modelValue ?? '')
 })
 
 watch(placeholderText, () => {
-  // Placeholder extension reads function; force view update if needed
   if (editor.value?.view) {
     editor.value.view.dispatch(editor.value.state.tr)
   }
@@ -323,7 +381,11 @@ watch(placeholderText, () => {
 
 onBeforeUnmount(() => editor.value?.destroy())
 
-defineExpose({ editor })
+const focus = () => {
+  editor.value?.commands.focus()
+}
+
+defineExpose({ editor, focus })
 
 const onDocClick = (e: MouseEvent) => {
   if (showPlusMenu.value && plusMenuRef.value && !plusMenuRef.value.contains(e.target as Node)) {
@@ -334,7 +396,6 @@ const onDocClick = (e: MouseEvent) => {
 onMounted(() => document.addEventListener('mousedown', onDocClick))
 onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
 
-// Sync initial hasTextInput from modelValue
 hasTextInput.value = !!props.modelValue.trim()
 </script>
 

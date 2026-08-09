@@ -30,12 +30,14 @@ from app.infrastructure.repositories.mongo_agent_repository import MongoAgentRep
 from app.infrastructure.repositories.mongo_session_repository import MongoSessionRepository
 from app.infrastructure.repositories.file_mcp_repository import FileMCPRepository
 from app.infrastructure.repositories.user_repository import MongoUserRepository
-from app.infrastructure.repositories.claw_repository import ClawRepository as MongoClawRepository
+from app.infrastructure.repositories.claw_repository import ClawSessionRepository as MongoClawSessionRepository
 from app.application.services.claw_service import ClawService
 from app.domain.services.claw_domain_service import ClawDomainService
 from app.application.services.project_service import ProjectService
 from app.infrastructure.repositories.mongo_project_repository import MongoProjectRepository
 from app.infrastructure.repositories.mongo_file_favorite_repository import MongoFileFavoriteRepository
+from app.infrastructure.repositories.mongo_model_config_repository import MongoModelConfigRepository
+from app.domain.repositories.model_config_repository import ModelConfigRepository
 
 
 # Configure logging
@@ -192,11 +194,17 @@ def get_token_service() -> TokenService:
 
 
 @lru_cache()
+def get_model_config_repository() -> ModelConfigRepository:
+    """Get the admin-managed model registry repository"""
+    return MongoModelConfigRepository()
+
+
+@lru_cache()
 def get_claw_service() -> ClawService:
     """Get claw service instance"""
     logger.info("Creating ClawService instance")
     settings = get_settings()
-    claw_repository = MongoClawRepository()
+    claw_session_repository = MongoClawSessionRepository()
 
     if settings.claw_address:
         from app.infrastructure.external.claw.fixed_claw_runtime import FixedClawRuntime
@@ -209,7 +217,7 @@ def get_claw_service() -> ClawService:
     claw_client = HttpClawClient()
 
     claw_domain_service = ClawDomainService(
-        claw_repository=claw_repository,
+        claw_session_repository=claw_session_repository,
         claw_runtime=claw_runtime,
         claw_client=claw_client,
     )

@@ -1,8 +1,17 @@
 {
   "id": "manus-claw",
+  "activation": {
+    "onStartup": true
+  },
+  "enabledByDefault": true,
   "name": "manus-claw",
   "description": "Connector plugin that bridges manus backend with the local OpenClaw Gateway via HTTP server.",
   "version": "0.1.0",
+  "contracts": {
+    "tools": [
+      "manus_upload_file"
+    ]
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": true,

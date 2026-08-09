@@ -4,6 +4,8 @@ import type { FileInfo } from '../api/file'
 /** UI mutual-exclusion / panel chrome */
 export const UI_SHOW_FILE_PREVIEWER = 'ui:show-file-previewer' as const
 export const UI_SHOW_COMPUTER_PANEL = 'ui:show-computer-panel' as const
+/** Composer "Plan (Ctrl+/)" menu item / shortcut — PlanPanel expands itself. */
+export const UI_OPEN_PLAN_PANEL = 'ui:open-plan-panel' as const
 
 /**
  * Typed app-wide mitt bus. No `[key: string]` escape — new events must be declared here.
@@ -13,10 +15,13 @@ export type AppEvents = {
   'sessions:changed': undefined
   'ui:show-file-previewer': undefined
   'ui:show-computer-panel': undefined
+  'ui:open-plan-panel': undefined
   /** VNC browser takeover overlay */
   'ui:takeover': {
     sessionId: string
     active: boolean
+    /** Optional override for non-Manus-Agent sessions (e.g. Claw), mirrors VNCViewer's urlResolver prop */
+    urlResolver?: (sessionId: string) => string
   }
   /** Global toast notifications */
   'ui:toast': {

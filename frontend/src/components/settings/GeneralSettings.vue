@@ -94,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, type Component } from 'vue'
+import { ref, computed, watch, onMounted, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Sun, Moon, Contrast } from 'lucide-vue-next'
 import {
@@ -127,10 +127,15 @@ const {
 const selectedLanguage = ref<Locale>(currentLocale.value)
 const themeMode = ref<ThemeMode>(readStoredThemeMode())
 
-const languageOptions: SelectOption[] = [
-  { value: 'zh', label: t('Simplified Chinese') },
+const languageOptions = computed<SelectOption[]>(() => [
+  { value: 'pt', label: t('Portuguese (Brazil)') },
   { value: 'en', label: t('English') },
-]
+  { value: 'zh', label: t('Simplified Chinese') },
+])
+
+watch(currentLocale, (val) => {
+  selectedLanguage.value = val
+})
 
 const themeOptions: { value: ThemeMode; label: string; icon: Component }[] = [
   { value: 'light', label: 'Light', icon: Sun },

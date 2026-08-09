@@ -19,8 +19,19 @@ class SessionRepository(Protocol):
         """Find all sessions for a specific user"""
         ...
     
-    async def find_summaries_by_user_id(self, user_id: str) -> List[SessionSummary]:
-        """Find lightweight session summaries for a user (excludes events/files)"""
+    async def find_summaries_by_user_id(
+        self,
+        user_id: str,
+        archived: Optional[bool] = False,
+        shared: Optional[bool] = None,
+    ) -> List[SessionSummary]:
+        """Find lightweight session summaries for a user (excludes events/files)
+
+        archived: False (default) excludes archived sessions; True returns
+            only archived sessions; None applies no filter on is_archived.
+        shared: None (default) applies no filter; True/False restrict to
+            shared / non-shared sessions respectively.
+        """
         ...
 
     async def find_summary_by_id_and_user_id(
@@ -85,6 +96,14 @@ class SessionRepository(Protocol):
         """Update the pin status of a session"""
         ...
 
+    async def update_archived_status(self, session_id: str, is_archived: bool) -> None:
+        """Update the archived status of a session"""
+        ...
+
+    async def update_rating(self, session_id: str, rating: Optional[int]) -> None:
+        """Set or clear the session's 1-5 star rating"""
+        ...
+
     async def update_project_id(self, session_id: str, project_id: Optional[str]) -> None:
         """Assign or clear project association for a session"""
         ...
@@ -95,7 +114,13 @@ class SessionRepository(Protocol):
     async def update_task_mode(self, session_id: str, task_mode: str) -> None:
         """Update session task mode (agent | chat)"""
         ...
-    
+
+    async def update_model(
+        self, session_id: str, model_name: Optional[str], model_provider: Optional[str] = None
+    ) -> None:
+        """Update the session's selected model id and provider"""
+        ...
+
     async def delete(self, session_id: str) -> None:
         """Delete a session"""
         ...

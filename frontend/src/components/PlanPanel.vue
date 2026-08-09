@@ -25,6 +25,7 @@
         </div>
       </div>
       <span class="flex shrink-0 items-center justify-center gap-[4px]">
+        <span v-if="currentStepElapsed" class="text-xs text-[var(--text-tertiary)] tabular-nums">{{ currentStepElapsed }}</span>
         <span class="text-xs text-[var(--text-tertiary)]">{{ planProgress }}</span>
         <ChevronUp v-if="isExpanded" :size="16" class="text-[var(--icon-tertiary)]" />
         <ChevronDown v-else :size="16" class="text-[var(--icon-tertiary)]" />
@@ -40,9 +41,12 @@
         class="flex min-h-[20px] min-w-0 max-w-full items-center gap-[8px]">
         <PlanStepIcon :status="step.status" />
         <span
-          class="min-w-0 truncate text-sm text-[var(--text-primary)]"
+          class="min-w-0 truncate flex-1 text-sm text-[var(--text-primary)]"
           :title="step.description">
           {{ step.description }}
+        </span>
+        <span v-if="stepElapsed(step)" class="shrink-0 text-xs text-[var(--text-tertiary)] tabular-nums">
+          {{ stepElapsed(step) }}
         </span>
       </div>
     </div>
@@ -50,11 +54,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ChevronUp, ChevronDown } from 'lucide-vue-next';
 import PlanStepIcon from './PlanStepIcon.vue';
 import type { PlanEventData, StepEventData } from '../types/event';
+import { formatDuration } from '../utils/duration';
+import { eventBus, UI_OPEN_PLAN_PANEL } from '../utils/eventBus';
 
 const props = defineProps<{
   plan: PlanEventData;
@@ -66,6 +72,15 @@ const isExpanded = ref(false);
 const togglePanel = () => {
   isExpanded.value = !isExpanded.value;
 };
+
+// TAREFA 3.1 — composer "Plan (Ctrl+/)" menu item / shortcut
+const openFromShortcut = () => {
+  if (props.plan?.steps?.length) {
+    isExpanded.value = true;
+  }
+};
+onMounted(() => eventBus.on(UI_OPEN_PLAN_PANEL, openFromShortcut));
+onUnmounted(() => eventBus.off(UI_OPEN_PLAN_PANEL, openFromShortcut));
 
 const steps = computed(() => props.plan?.steps ?? []);
 
@@ -93,4 +108,49 @@ const currentStepStatus = computed(() => {
   if (steps.value.every((s) => s.status === 'completed')) return 'completed' as const;
   return currentStep.value?.status ?? 'pending';
 });
+
+// Live ticker for the running step's stopwatch. A single shared interval
+// (not one per step) keeps this cheap regardless of plan size, and it only
+// runs while something is actually in progress.
+const now = ref(Date.now());
+let tickHandle: ReturnType<typeof setInterval> | undefined;
+
+const hasRunningStep = computed(() => steps.value.some((s) => s.status === 'running'));
+
+const stopTicking = () => {
+  if (tickHandle !== undefined) {
+    clearInterval(tickHandle);
+    tickHandle = undefined;
+  }
+};
+
+watch(
+  hasRunningStep,
+  (running) => {
+    if (running && tickHandle === undefined) {
+      now.value = Date.now();
+      tickHandle = setInterval(() => {
+        now.value = Date.now();
+      }, 1000);
+    } else if (!running) {
+      stopTicking();
+    }
+  },
+  { immediate: true }
+);
+
+onUnmounted(stopTicking);
+
+/** duration_ms is authoritative once a step finishes; while running, derive
+ * a live elapsed time from started_at. Minor client/server clock skew in the
+ * live value is acceptable — it self-corrects once the step completes. */
+const stepElapsed = (step: StepEventData): string => {
+  if (step.duration_ms !== undefined) return formatDuration(step.duration_ms);
+  if (step.status === 'running' && step.started_at) {
+    return formatDuration(now.value - step.started_at * 1000);
+  }
+  return '';
+};
+
+const currentStepElapsed = computed(() => (currentStep.value ? stepElapsed(currentStep.value) : ''));
 </script>

@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { WebSocketServer } from 'ws';
 import { SessionHistory } from './session-history.js';
 
 const CORS_HEADERS = {
@@ -65,6 +66,23 @@ export class ManusClawHttpServer {
 
   start() {
     this.server = http.createServer((req, res) => this._handleRequest(req, res));
+
+    // Operator Terminal WS: ws://host:port/terminal/{sessionId}, sessionId
+    // coming from a prior POST /terminal/open response.
+    this.terminalWss = new WebSocketServer({ noServer: true });
+    this.server.on('upgrade', (req, socket, head) => {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const match = url.pathname.match(/^\/terminal\/([^/]+)$/);
+      if (!match) {
+        socket.destroy();
+        return;
+      }
+      const sessionId = decodeURIComponent(match[1]);
+      this.terminalWss.handleUpgrade(req, socket, head, (ws) => {
+        this._handleTerminalSocket(ws, sessionId);
+      });
+    });
+
     this.server.listen(this.port, this.host, () => {
       this.logger?.info?.(`[manus-claw] HTTP server listening on ${this.host}:${this.port}`);
     });
@@ -74,6 +92,10 @@ export class ManusClawHttpServer {
   }
 
   stop() {
+    if (this.terminalWss) {
+      this.terminalWss.close();
+      this.terminalWss = null;
+    }
     if (this.server) {
       this.server.close();
       this.server = null;
@@ -103,6 +125,10 @@ export class ManusClawHttpServer {
 
     if (url.pathname === '/workspace' && req.method === 'POST') {
       return this._handleWorkspaceUpload(req, res, url);
+    }
+
+    if (url.pathname === '/terminal/open' && req.method === 'POST') {
+      return this._handleTerminalOpen(req, res);
     }
 
     if (url.pathname === '/history' && req.method === 'GET') {
@@ -172,6 +198,133 @@ export class ManusClawHttpServer {
     }
   }
 
+  /**
+   * POST /terminal/open
+   * Body (all optional): { cols, rows, agent_id }. cols/rows default to
+   * 80x24; agent_id defaults to this plugin's configured agent.
+   * Opens a real PTY session via the gateway's operator terminal.open RPC.
+   * Returns { session_id, agent_id, shell, cwd, confined } on success —
+   * session_id is what the client then dials into the terminal WS endpoint
+   * at ws://.../terminal/{session_id}.
+   */
+  async _handleTerminalOpen(req, res) {
+    let body;
+    try {
+      body = await parseBody(req);
+    } catch {
+      return sendJSON(res, 400, { error: 'Invalid request body' });
+    }
+
+    if (!this.gatewayBridge?.isGatewayReady?.()) {
+      return sendJSON(res, 503, { error: 'Gateway not ready' });
+    }
+
+    const cols = Number.isInteger(body.cols) ? body.cols : 80;
+    const rows = Number.isInteger(body.rows) ? body.rows : 24;
+
+    try {
+      const result = await this.gatewayBridge.openTerminal({
+        agentId: body.agent_id,
+        cols,
+        rows,
+      });
+      return sendJSON(res, 200, {
+        session_id: result.sessionId,
+        agent_id: result.agentId,
+        shell: result.shell,
+        cwd: result.cwd,
+        confined: result.confined,
+      });
+    } catch (err) {
+      this.logger?.warn?.(`[terminal] open failed: ${err}`);
+      return sendJSON(res, 502, { error: String(err?.message || err) });
+    }
+  }
+
+  /**
+   * WS ws://host:port/terminal/{sessionId}
+   *
+   * Client -> server messages (JSON text frames):
+   *   {"type":"input","data":"..."}          -> terminal.input
+   *   {"type":"resize","cols":N,"rows":N}    -> terminal.resize
+   *
+   * Server -> client messages:
+   *   {"type":"data","seq":N,"data":"..."}                        (terminal.data)
+   *   {"type":"exit","exit_code":N|null,"signal":N|null,"reason":"...","error"?:"..."}  (terminal.exit, then the socket is closed)
+   *   {"type":"error","error":"..."}                               (bad input / RPC failure, socket stays open)
+   *
+   * On WS close (client navigates away, network drop, etc.) the underlying
+   * PTY session is closed too via terminal.close — this endpoint does not
+   * support detach/reattach in this task; every WS owns its terminal for its
+   * lifetime.
+   */
+  _handleTerminalSocket(ws, sessionId) {
+    if (!this.gatewayBridge?.isGatewayReady?.()) {
+      try { ws.send(JSON.stringify({ type: 'error', error: 'Gateway not ready' })); } catch {}
+      try { ws.close(1011, 'gateway not ready'); } catch {}
+      return;
+    }
+
+    let closed = false;
+
+    const cleanup = this.gatewayBridge.registerTerminalHandler(sessionId, {
+      onData: (payload) => {
+        if (closed || ws.readyState !== ws.OPEN) return;
+        try {
+          ws.send(JSON.stringify({ type: 'data', seq: payload.seq, data: payload.data }));
+        } catch {}
+      },
+      onExit: (payload) => {
+        if (closed) return;
+        closed = true;
+        if (ws.readyState === ws.OPEN) {
+          try {
+            ws.send(JSON.stringify({
+              type: 'exit',
+              exit_code: payload.exitCode ?? null,
+              signal: payload.signal ?? null,
+              reason: payload.reason,
+              ...(payload.error ? { error: payload.error } : {}),
+            }));
+          } catch {}
+        }
+        try { ws.close(1000, 'terminal exit'); } catch {}
+      },
+    });
+
+    ws.on('message', async (raw) => {
+      if (closed) return;
+      let msg;
+      try {
+        msg = JSON.parse(raw.toString());
+      } catch {
+        try { ws.send(JSON.stringify({ type: 'error', error: 'Invalid JSON' })); } catch {}
+        return;
+      }
+
+      try {
+        if (msg.type === 'input') {
+          await this.gatewayBridge.sendTerminalInput(sessionId, msg.data ?? '');
+        } else if (msg.type === 'resize') {
+          await this.gatewayBridge.resizeTerminal(sessionId, msg.cols, msg.rows);
+        } else {
+          try { ws.send(JSON.stringify({ type: 'error', error: `unknown message type: ${msg.type}` })); } catch {}
+        }
+      } catch (err) {
+        if (ws.readyState === ws.OPEN) {
+          try { ws.send(JSON.stringify({ type: 'error', error: String(err?.message || err) })); } catch {}
+        }
+      }
+    });
+
+    ws.on('close', () => {
+      if (closed) return;
+      closed = true;
+      cleanup?.();
+      this.gatewayBridge.closeTerminal(sessionId).catch(() => {});
+    });
+  }
+
   async _handleChat(req, res) {
     let body;
     try {
@@ -216,6 +369,16 @@ export class ManusClawHttpServer {
           // fileInfo is a FileInfo object: { file_id, filename, content_type, size, upload_date, file_url }
           const data = JSON.stringify({ type: 'file', ...fileInfo });
           res.write(`event: file\ndata: ${data}\n\n`);
+        },
+        onTool: (toolData) => {
+          if (done) return;
+          // toolData is the gateway's raw payload.data for stream:"tool":
+          // { phase: 'start'|'update'|'result', name, toolCallId,
+          //   args? (start), partialResult? (update), result? (result),
+          //   isError? (result), meta? } — passed through as-is, see
+          // gateway-bridge.js's onTool doc comment for the full field list.
+          const data = JSON.stringify({ type: 'tool', ...toolData });
+          res.write(`event: tool\ndata: ${data}\n\n`);
         },
         onComplete: (stopReason) => {
           if (done) return;

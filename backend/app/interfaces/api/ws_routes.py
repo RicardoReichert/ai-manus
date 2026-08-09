@@ -499,16 +499,22 @@ async def chat_ws(websocket: WebSocket):
         await cancel_stream()
 
 
-@router.websocket("/claw")
-async def claw_ws(websocket: WebSocket):
-    """Claw chat channel — same Cookie / Bearer resolve as /ws/sessions and /ws/chat.
+@router.websocket("/claw/{session_id}")
+async def claw_ws(websocket: WebSocket, session_id: str):
+    """Claw chat channel, scoped to one session — same Cookie / Bearer
+    resolve as /ws/sessions and /ws/chat.
+
+    A user may have several sessions; each gets its own connection (one
+    session per socket, matching /ws/vnc/{session_id}'s convention) so
+    events from one session's chat can never leak into another's.
 
     Client → Server:
-      {"type":"chat","message":"...","session_id":"default","file_ids":[]}
+      {"type":"chat","message":"...","file_ids":[]}
 
     Server → Client:
       {"type":"text","content":"..."}
       {"type":"file",...}
+      {"type":"tool","phase":"start"|"update"|"result","name":"...","toolCallId":"...",...}
       {"type":"done","stop_reason":"..."}
       {"type":"error","error":"..."}
       {"type":"catchup","content":"..."}
@@ -520,14 +526,19 @@ async def claw_ws(websocket: WebSocket):
         await websocket.close(code=4001, reason="Unauthorized")
         return
 
+    claw_service = get_claw_service()
+    session = await claw_service.get_session(user.id, session_id)
+    if not session:
+        await websocket.close(code=4004, reason="Claw session not found")
+        return
+
     await websocket.accept()
 
-    claw_service = get_claw_service()
-    queue = claw_service.event_bus.subscribe(user.id)
+    queue = claw_service.event_bus.subscribe(session_id)
 
     async def _write_events() -> None:
         try:
-            pending = claw_service.get_pending_content(user.id)
+            pending = claw_service.get_pending_content(session_id)
             if pending:
                 await websocket.send_json({"type": "catchup", "content": pending})
 
@@ -545,8 +556,8 @@ async def claw_ws(websocket: WebSocket):
     async def _process_files(
         file_ids: list[str], uid: str
     ) -> tuple[str, list[ClawAttachment]]:
-        claw = await claw_service.claw_repository.get_by_user_id(uid)
-        claw_base_url = claw.http_base_url if claw else None
+        current = await claw_service.get_session(uid, session_id)
+        claw_base_url = current.http_base_url if current else None
 
         refs: list[str] = []
         attachments: list[ClawAttachment] = []
@@ -599,7 +610,6 @@ async def claw_ws(websocket: WebSocket):
                 msg_type = data.get("type")
                 if msg_type == "chat":
                     message = data.get("message", "").strip()
-                    session_id = data.get("session_id", "default")
                     file_ids = data.get("file_ids", [])
                     user_attachments: list[ClawAttachment] = []
 
@@ -610,10 +620,10 @@ async def claw_ws(websocket: WebSocket):
 
                     if message:
                         try:
-                            await claw_service.send_message(user.id, message, session_id)
+                            await claw_service.send_message(user.id, session_id, message)
                             if user_attachments:
                                 await claw_service.claw_repository.append_message(
-                                    user.id, "attachments", "user", attachments=user_attachments,
+                                    session_id, "attachments", "user", attachments=user_attachments,
                                 )
                         except Exception as e:
                             await websocket.send_json({"type": "error", "error": str(e)})
@@ -630,7 +640,7 @@ async def claw_ws(websocket: WebSocket):
         for t in pending:
             t.cancel()
     finally:
-        claw_service.event_bus.unsubscribe(user.id, queue)
+        claw_service.event_bus.unsubscribe(session_id, queue)
 
 
 @router.websocket("/vnc/{session_id}")
@@ -698,6 +708,122 @@ async def vnc_ws(websocket: WebSocket, session_id: str):
             pass
     except Exception as e:
         logger.error("VNC WebSocket error: %s", e)
+        try:
+            await websocket.close(code=1011, reason=f"WebSocket error: {str(e)}")
+        except Exception:
+            pass
+
+
+@router.websocket("/claw/terminal/{session_id}")
+async def claw_terminal_ws(websocket: WebSocket, session_id: str):
+    """Claw Operator Terminal proxy — Cookie / Bearer auth, no signed URL.
+
+    Unlike the main sandbox's ``vnc_ws`` (raw binary), this proxies JSON
+    *text* frames: Task 5's plugin WS endpoint exchanges JSON messages, not
+    raw bytes, so forwarding is ``receive_text``/``send_text`` in both
+    directions rather than ``receive_bytes``/``send_bytes``. Frames are
+    passed through
+    unparsed — this route only needs to move bytes between the two sockets,
+    not interpret the protocol.
+
+    Optional query params ``?cols=&rows=`` size the initial PTY (defaults
+    80x24, matching the plugin's own defaults per Task 5's report); resizing
+    afterwards is a client -> server ``{"type":"resize",...}`` message,
+    forwarded like any other frame.
+
+    Client -> Server (forwarded as-is to the Claw container):
+      {"type":"input","data":"..."}
+      {"type":"resize","cols":100,"rows":30}
+
+    Server -> Client (forwarded as-is from the Claw container):
+      {"type":"data","seq":N,"data":"..."}
+      {"type":"exit","exit_code":...,"signal":...,"reason":"..."}
+      {"type":"error","error":"..."}
+    """
+    try:
+        user = await resolve_ws_user(websocket)
+    except Exception:
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+
+    claw_service = get_claw_service()
+    session = await claw_service.get_session(user.id, session_id)
+    if not session:
+        await websocket.close(code=4004, reason="Claw session not found")
+        return
+
+    def _int_query_param(name: str, default: int) -> int:
+        raw = websocket.query_params.get(name)
+        if not raw:
+            return default
+        try:
+            return int(raw)
+        except ValueError:
+            return default
+
+    cols = _int_query_param("cols", 80)
+    rows = _int_query_param("rows", 24)
+
+    await websocket.accept()
+    logger.info("Accepted Claw terminal WS for session %s user %s", session_id, user.id)
+
+    try:
+        terminal_ws_url, terminal_session_id = await claw_service.open_terminal(
+            user.id, session_id, cols, rows,
+        )
+        logger.info(
+            "Opened Claw terminal %s for session %s, connecting to %s",
+            terminal_session_id, session_id, terminal_ws_url,
+        )
+
+        async with websockets.connect(terminal_ws_url) as terminal_ws:
+            async def forward_to_terminal() -> None:
+                try:
+                    while True:
+                        data = await websocket.receive_text()
+                        await terminal_ws.send(data)
+                except WebSocketDisconnect:
+                    logger.info("Web -> Claw terminal connection closed")
+                except Exception as e:
+                    logger.error("Error forwarding data to Claw terminal: %s", e)
+
+            async def forward_from_terminal() -> None:
+                try:
+                    while True:
+                        data = await terminal_ws.recv()
+                        if isinstance(data, bytes):
+                            data = data.decode("utf-8", errors="replace")
+                        await websocket.send_text(data)
+                except websockets.exceptions.ConnectionClosed:
+                    logger.info("Claw terminal -> Web connection closed")
+                except Exception as e:
+                    logger.error("Error forwarding data from Claw terminal: %s", e)
+
+            forward_task1 = asyncio.create_task(forward_to_terminal())
+            forward_task2 = asyncio.create_task(forward_from_terminal())
+            _done, pending = await asyncio.wait(
+                [forward_task1, forward_task2],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+    except ValueError as e:
+        logger.error("Claw terminal unavailable for session %s: %s", session_id, e)
+        try:
+            await websocket.close(code=4004, reason=str(e))
+        except Exception:
+            pass
+    except ConnectionError as e:
+        logger.error("Unable to connect to Claw terminal: %s", e)
+        try:
+            await websocket.close(
+                code=1011,
+                reason=f"Unable to connect to Claw terminal: {str(e)}",
+            )
+        except Exception:
+            pass
+    except Exception as e:
+        logger.error("Claw terminal WebSocket error: %s", e)
         try:
             await websocket.close(code=1011, reason=f"WebSocket error: {str(e)}")
         except Exception:

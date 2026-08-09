@@ -10,15 +10,20 @@ import {
   Search,
   ChevronsUpDown,
   ArrowUpRight,
+  BrainCog,
+  ShieldCheck,
 } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
 import { useSettingsDialog } from '@/composables/useSettingsDialog'
+import UserAvatar from '@/components/UserAvatar.vue'
 
 export type SettingsTabId =
   | 'general'
   | 'account'
   | 'shortcuts'
   | 'personalization'
+  | 'data-controls'
+  | 'models'
   | 'help'
 
 export interface SettingsNavItem {
@@ -47,27 +52,40 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const { currentUser } = useAuth()
+const { currentUser, isAdmin } = useAuth()
 const { isSettingsDialogOpen } = useSettingsDialog()
 
-const navGroups: SettingsNavGroup[] = [
-  {
-    id: 'settings',
-    label: 'Settings',
-    items: [
-      { id: 'general', label: 'General', icon: Settings2 },
-      { id: 'account', label: 'Account', icon: UserRound },
-      { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
-    ],
-  },
-  {
-    id: 'features',
-    label: 'Features',
-    items: [
-      { id: 'personalization', label: 'Personalization', icon: LayoutGrid },
-    ],
-  },
-]
+const navGroups = computed<SettingsNavGroup[]>(() => {
+  const groups: SettingsNavGroup[] = [
+    {
+      id: 'settings',
+      label: 'Settings',
+      items: [
+        { id: 'general', label: 'General', icon: Settings2 },
+        { id: 'account', label: 'Account', icon: UserRound },
+        { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
+      ],
+    },
+    {
+      id: 'features',
+      label: 'Features',
+      items: [
+        { id: 'personalization', label: 'Personalization', icon: LayoutGrid },
+        { id: 'data-controls', label: 'Data Controls', icon: ShieldCheck },
+      ],
+    },
+  ]
+  if (isAdmin.value) {
+    groups.push({
+      id: 'admin',
+      label: 'Admin',
+      items: [
+        { id: 'models', label: 'Models', icon: BrainCog },
+      ],
+    })
+  }
+  return groups
+})
 
 const helpItem: SettingsNavItem = {
   id: 'help',
@@ -102,8 +120,8 @@ const avatarLetter = computed(() =>
 
 const filteredGroups = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return navGroups
-  return navGroups
+  if (!q) return navGroups.value
+  return navGroups.value
     .map((group) => ({
       ...group,
       items: group.items.filter((item) =>
@@ -122,7 +140,7 @@ const showHelp = computed(() => {
 })
 
 const activeTitle = computed(() => {
-  const all = [...navGroups.flatMap((g) => g.items), helpItem]
+  const all = [...navGroups.value.flatMap((g) => g.items), helpItem]
   const current = all.find((item) => item.id === activeTab.value)
   return current ? t(current.label) : ''
 })
@@ -154,12 +172,7 @@ defineExpose({ activeTab })
             class="col-start-1 row-start-1 min-w-0 min-h-[36px] flex gap-2 items-center"
           >
             <div class="flex flex-1 gap-[10px] items-center overflow-hidden min-w-0">
-              <div
-                class="relative flex items-center justify-center font-bold flex-shrink-0 rounded-full overflow-hidden"
-                style="width: 28px; height: 28px; font-size: 14px; color: rgba(255, 255, 255, 0.9); background-color: rgb(59, 130, 246);"
-              >
-                {{ avatarLetter }}
-              </div>
+              <UserAvatar :avatar-url="currentUser?.avatar_url" :fallback-letter="avatarLetter" :size="28" />
               <div class="flex min-w-0 flex-1 flex-col justify-center">
                 <span
                   class="truncate text-[14px] font-medium leading-5 tracking-[-0.15px] text-[var(--text-primary)]"

@@ -14,6 +14,9 @@ class BrowserToolkit(BaseToolkit):
 - Not all interactive elements are listed; use coordinates for unlisted elements
 - Pages are auto-extracted to Markdown when possible; the extraction may include off-screen text but omits links/images and is not guaranteed complete
 - If the extracted Markdown already covers what you need, don't scroll; otherwise scroll to view the full page
+- For a web search (not a URL you already have), navigate straight to https://html.duckduckgo.com/html/?q=<query> first — DuckDuckGo's no-JS HTML page, more tolerant of automation than Google and needs no API key. It is not guaranteed CAPTCHA-free; if the page shows a CAPTCHA, verification challenge, or no usable results, don't retry it — navigate instead to https://www.bing.com/search?q=<query> as the fallback
+- Narrow a DuckDuckGo query with its search syntax instead of piling on plain keywords: `"exact phrase"` for an exact match, `site:example.com` / `-site:example.com` to include/exclude a domain, `-word` to exclude a term, `filetype:pdf` to target a file type, `intitle:word`/`inurl:word` to require it in the title/URL. Combine them, e.g. `"Novo Repartimento" Parakanã -site:pinterest.com`
+- For research on a topic with a social/community dimension (conflict, controversy, public reaction), don't stop at the first source type: check news outlets, official/institutional pages, and informal sources (forums, blogs, video platforms) so the picture isn't one-sided
 """
     
     def __init__(self, browser: Browser):

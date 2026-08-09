@@ -88,7 +88,10 @@ class PlannerAgent(BaseAgent):
                 yield event
 
     async def update_plan(self, plan: Plan, step: Step) -> AsyncGenerator[BaseEvent, None]:
-        request = UPDATE_PLAN_PROMPT.format(plan=plan.dump_json(), step=step.model_dump_json())
+        request = UPDATE_PLAN_PROMPT.format(
+            plan=plan.dump_json(),
+            step=step.model_dump_json(exclude={"started_at", "finished_at"}),
+        )
         async for event in self.execute(request, output_tool=UPDATE_PLAN_TOOL):
             if isinstance(event, StructuredOutputEvent):
                 output: PlanUpdateOutput = event.output

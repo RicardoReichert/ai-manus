@@ -28,8 +28,19 @@
     </div>
 
     <div class="flex shrink-0 items-center justify-end gap-[4px] select-none">
-      <!-- Official: ToolShare (skip) + ToolDownload -->
+      <!-- Official: ToolShare (skip) + ToolFavorite + ToolDownload -->
       <div class="flex items-center gap-[4px]">
+        <div
+          v-if="fileInfo.file_id"
+          class="flex size-[32px] cursor-pointer items-center justify-center rounded-[8px] hover:bg-[var(--fill-tsp-white-main)]"
+          :title="isFavorite ? t('Unfavorite') : t('Add to favorites')"
+          @click="emit('toggleFavorite')">
+          <Star
+            class="size-[18px]"
+            :class="isFavorite ? 'text-[var(--function-warning)]' : 'text-[var(--icon-secondary)]'"
+            :fill="isFavorite ? 'var(--function-warning)' : 'none'"
+          />
+        </div>
         <div
           class="flex size-[32px] cursor-pointer items-center justify-center rounded-[8px] hover:bg-[var(--fill-tsp-white-main)]"
           :title="t('Download')"
@@ -59,7 +70,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { Download, X } from 'lucide-vue-next'
+import { Download, X, Star } from 'lucide-vue-next'
 import type { FileInfo } from '../api/file'
 import type { FileType } from '../utils/fileType'
 import type { FilePreviewViewMode } from '../composables/useFilePreviewer'
@@ -70,11 +81,13 @@ defineProps<{
   fileType: FileType
   isImage: boolean
   viewMode: FilePreviewViewMode
+  isFavorite: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'download'): void
   (e: 'close'): void
+  (e: 'toggleFavorite'): void
 }>()
 
 const { t } = useI18n()

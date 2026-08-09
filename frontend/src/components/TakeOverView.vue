@@ -1,10 +1,11 @@
 <template>
     <div v-if="shouldShow" class="fixed bg-[var(--background-gray-main)] z-50 transition-all w-full h-full inset-0">
         <div class="w-full h-full">
-            <VNCViewer 
+            <VNCViewer
                 :session-id="sessionId"
                 :enabled="shouldShow"
                 :view-only="false"
+                v-bind="urlResolver ? { urlResolver } : {}"
             />
         </div>
         <div class="absolute bottom-4 left-1/2 -translate-x-1/2">
@@ -29,10 +30,12 @@ const { t } = useI18n();
 // Takeover state
 const takeOverActive = ref(false);
 const currentSessionId = ref('');
+const currentUrlResolver = ref<((sessionId: string) => string) | undefined>(undefined);
 
-const handleTakeOverEvent = (payload: { sessionId: string; active: boolean }) => {
+const handleTakeOverEvent = (payload: { sessionId: string; active: boolean; urlResolver?: (sessionId: string) => string }) => {
     takeOverActive.value = payload.active;
     currentSessionId.value = payload.sessionId;
+    currentUrlResolver.value = payload.urlResolver;
 };
 
 // Calculate whether to show takeover view
@@ -61,11 +64,15 @@ const sessionId = computed(() => {
     return currentSessionId.value || route.params.sessionId as string || '';
 });
 
+// Optional resolver for non-Manus-Agent sessions (e.g. Claw); undefined keeps VNCViewer's default
+const urlResolver = computed(() => currentUrlResolver.value);
+
 // Exit takeover functionality
 const exitTakeOver = () => {
     // Update local state
     takeOverActive.value = false;
     currentSessionId.value = '';
+    currentUrlResolver.value = undefined;
 };
 
 // Expose sessionId for parent component to use

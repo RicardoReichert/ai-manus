@@ -18,25 +18,37 @@ class DockerClawRuntime:
     def __init__(self):
         self.settings = get_settings()
 
-    async def create(self, claw_id: str, api_key: str) -> ClawInstanceInfo:
+    async def create(self, session_id: str, api_key: str, volume_name: str) -> ClawInstanceInfo:
         import docker
         docker_client = docker.from_env()
 
         claw_network = self.settings.claw_network
         manus_api_base_url = self.settings.manus_api_base_url
-        container_name = f"{self.settings.claw_name_prefix}-{claw_id[:8]}"
+        container_name = f"{self.settings.claw_name_prefix}-{session_id[:8]}"
 
-        # Remove any stale container left over from a previous provisioning
-        # attempt with the same claw id, otherwise `run` fails with a name
-        # conflict and the old container lingers forever.
+        # Remove a stale container left over from a previous provisioning
+        # attempt for *this session specifically* — scoped to this exact
+        # name, not the whole shared prefix. Sweeping every container
+        # sharing the prefix (the previous behavior) would force-remove
+        # other sessions' — possibly other users' — live containers on every
+        # new create() call, which matters a lot more now that many sessions
+        # run concurrently instead of at most one globally.
         try:
-            stale = docker_client.containers.get(container_name)
-            logger.warning(f"Removing stale claw container: {container_name}")
-            stale.remove(force=True)
+            docker_client.containers.get(container_name).remove(force=True)
+            logger.warning(f"Removed stale claw container before recreate: {container_name}")
         except docker.errors.NotFound:
             pass
         except Exception as e:
-            logger.warning(f"Failed to remove stale container {container_name}: {e}")
+            logger.warning(f"Failed to remove stale claw container {container_name}: {e}")
+
+        # Idempotent: reusing an existing volume (a restart within the same
+        # session) is exactly what preserves OpenClaw's native memory across
+        # container recreation — this must never recreate/wipe the volume.
+        try:
+            docker_client.volumes.get(volume_name)
+        except docker.errors.NotFound:
+            docker_client.volumes.create(name=volume_name)
+            logger.info(f"Created claw session volume: {volume_name}")
 
         container_config = {
             "image": self.settings.claw_image,
@@ -47,10 +59,23 @@ class DockerClawRuntime:
                 "CLAW_TTL_SECONDS": str(self.settings.claw_ttl_seconds),
                 "MANUS_API_KEY": api_key,
                 "MANUS_API_BASE_URL": manus_api_base_url,
+                "CLAW_DOCKER_IN_DOCKER": "true" if self.settings.claw_docker_in_docker else "false",
+            },
+            "volumes": {
+                volume_name: {"bind": "/home/node/.openclaw", "mode": "rw"},
             },
         }
         if claw_network:
             container_config["network"] = claw_network
+        if self.settings.claw_docker_in_docker:
+            # dockerd (started by entrypoint.sh) needs root/privileged to
+            # create its own nested namespaces/cgroups/mounts. This is the
+            # container's own isolated daemon — never the host's socket,
+            # which is deliberately not mounted here or anywhere else this
+            # runtime touches. See claw/entrypoint.sh and the
+            # CLAW_DOCKER_IN_DOCKER setting's docstring in core/config.py for
+            # the full trade-off.
+            container_config["privileged"] = True
 
         container = docker_client.containers.run(**container_config)
         container.reload()
@@ -63,7 +88,9 @@ class DockerClawRuntime:
                     ip_address = nc["IPAddress"]
                     break
 
-        logger.info(f"Claw container started: {container_name} ip={ip_address}")
+        logger.info(
+            f"Claw container started: {container_name} ip={ip_address} volume={volume_name}"
+        )
         return ClawInstanceInfo(address=ip_address, instance_name=container_name)
 
     async def destroy(self, instance_name: Optional[str]) -> None:
@@ -83,6 +110,22 @@ class DockerClawRuntime:
         except Exception as e:
             logger.warning(f"Failed to remove container {instance_name}: {e}")
 
+    async def destroy_volume(self, volume_name: Optional[str]) -> None:
+        """Remove a session's persistent volume — only on explicit session delete."""
+        if not volume_name:
+            return
+        try:
+            import docker
+            docker_client = docker.from_env()
+            try:
+                volume = docker_client.volumes.get(volume_name)
+            except docker.errors.NotFound:
+                return
+            logger.info(f"Removing claw session volume: {volume_name}")
+            volume.remove(force=True)
+        except Exception as e:
+            logger.warning(f"Failed to remove volume {volume_name}: {e}")
+
     async def wait_for_ready(self, base_url: str) -> bool:
         timeout = self.settings.claw_ready_timeout
         interval = 2.0
@@ -97,7 +140,5 @@ class DockerClawRuntime:
                 except Exception:
                     pass
                 await asyncio.sleep(interval)
-        logger.warning(
-            f"Claw instance did not become ready after {timeout}s: {base_url}"
-        )
+        logger.warning(f"Claw instance not ready after {timeout}s: {base_url}")
         return False

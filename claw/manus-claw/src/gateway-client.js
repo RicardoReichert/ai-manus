@@ -152,7 +152,10 @@ export class GatewayClient {
         if (msg.error) {
           reject(new Error(msg.error.message || 'RPC error'));
         } else {
-          resolve(msg.result);
+          // Gateway response frames carry the result under `payload`, not
+          // `result` (see ResponseFrameSchema in openclaw's gateway
+          // protocol schema) — msg.result is always undefined.
+          resolve(msg.payload);
         }
         return;
       }
@@ -202,7 +205,7 @@ export class GatewayClient {
 
     const params = {
       minProtocol: 3,
-      maxProtocol: 3,
+      maxProtocol: 4,
       client: {
         id: clientId,
         version: '1.0.0',

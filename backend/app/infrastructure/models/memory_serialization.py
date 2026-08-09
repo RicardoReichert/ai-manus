@@ -87,8 +87,8 @@ def _upgrade_message(raw: Any) -> Dict[str, Any]:
         data["tool_calls"] = [_upgrade_tool_call(tc) for tc in data["tool_calls"]]
 
     # Keep only fields the domain model recognises; drop framework extras
-    # (additional_kwargs, response_metadata, invalid_tool_calls, status, ...).
-    allowed = {"role", "content", "tool_calls", "tool_call_id", "name"}
+    # (response_metadata, invalid_tool_calls, status, ...).
+    allowed = {"role", "content", "tool_calls", "tool_call_id", "name", "additional_kwargs"}
     return {k: v for k, v in data.items() if k in allowed}
 
 

@@ -61,6 +61,7 @@ class MessageEventData(BaseEventData):
     role: Literal["user", "assistant"]
     content: str
     attachments: Optional[List[FileInfoResponse]] = None
+    follow_ups: Optional[List[str]] = None
 
 class MessageStreamEvent(BaseStreamEvent):
     event: Literal["message"] = "message"
@@ -73,7 +74,8 @@ class MessageStreamEvent(BaseStreamEvent):
                 **BaseEventData.base_event_data(event),
                 role=event.role,
                 content=event.message,
-                attachments=[await FileInfoResponse.from_domain(attachment) for attachment in event.attachments] if event.attachments else None
+                attachments=[await FileInfoResponse.from_domain(attachment) for attachment in event.attachments] if event.attachments else None,
+                follow_ups=event.follow_ups,
             )
         )
 
@@ -163,6 +165,20 @@ class StepEventData(BaseEventData):
     status: ExecutionStatus
     id: str
     description: str
+    started_at: Optional[int] = None
+    duration_ms: Optional[int] = None
+
+def _step_event_data(step, base: dict) -> "StepEventData":
+    """Shared Step -> StepEventData mapping, used by both StepStreamEvent
+    and PlanStreamEvent so the two paths never disagree on a step's fields."""
+    return StepEventData(
+        **base,
+        status=step.status,
+        id=step.id,
+        description=step.description,
+        started_at=int(step.started_at.timestamp()) if step.started_at else None,
+        duration_ms=step.duration_ms,
+    )
 
 class StepStreamEvent(BaseStreamEvent):
     event: Literal["step"] = "step"
@@ -170,14 +186,7 @@ class StepStreamEvent(BaseStreamEvent):
 
     @classmethod
     def from_event(cls, event: StepEvent) -> Self:
-        return cls(
-            data=StepEventData(
-                **BaseEventData.base_event_data(event),
-                status=event.step.status,
-                id=event.step.id,
-                description=event.step.description
-            )
-        )
+        return cls(data=_step_event_data(event.step, BaseEventData.base_event_data(event)))
 
 class TitleEventData(BaseEventData):
     title: str
@@ -195,15 +204,11 @@ class PlanStreamEvent(BaseStreamEvent):
 
     @classmethod
     def from_event(cls, event: PlanEvent) -> Self:
+        base = BaseEventData.base_event_data(event)
         return cls(
             data=PlanEventData(
-                **BaseEventData.base_event_data(event),
-                steps=[StepEventData(
-                    **BaseEventData.base_event_data(event),
-                    status=step.status,
-                    id=step.id, 
-                    description=step.description
-                ) for step in event.plan.steps]
+                **base,
+                steps=[_step_event_data(step, base) for step in event.plan.steps]
             )
         )
 

@@ -13,6 +13,10 @@ export interface FileInfo {
   upload_date: string;
   metadata?: Record<string, any>;
   file_url?: string;
+  /** Only known when the caller already fetched it (e.g. from the Library
+   * listing); other callers (chat attachments, task logs) leave it unset and
+   * the previewer's favorite button starts unfilled. */
+  is_favorite?: boolean;
 }
 
 
@@ -74,7 +78,7 @@ export async function deleteFile(fileId: string): Promise<boolean> {
  */
 export async function getFileInfo(fileId: string): Promise<FileInfo | null> {
   try {
-    const response = await apiClient.get<ApiResponse<FileInfo>>(`/files/${fileId}`);
+    const response = await apiClient.get<ApiResponse<FileInfo>>(`/files/${fileId}/info`);
     return response.data.data;
   } catch (error) {
     console.error('Failed to get file info:', error);

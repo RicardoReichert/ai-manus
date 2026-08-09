@@ -318,61 +318,62 @@ const plugin = {
       },
     });
 
-    // ── Register the main service ──────────────────────────────────────────────
+    // ── Register and start the main service ──────────────────────────────────────
+    const startService = (runtime) => {
+      if (httpServer) return;
+      const openclawConfig = runtime?.config?.loadConfig?.() || context.config;
+      const cfg = resolveConfig(context.pluginConfig ?? {}, openclawConfig);
+      const workspaceDir = openclawConfig?.agents?.defaults?.workspace || '/home/node/.openclaw/workspace';
+
+      const logger = context.logger;
+
+      if (cfg.log.enabled) {
+        logger?.info?.(`[manus-claw] starting with gateway=${cfg.gateway.url} server=${cfg.server.host}:${cfg.server.port}`);
+      }
+
+      gatewayBridge = new GatewayBridge({ agentId: cfg.gateway.agentId, logger });
+
+      gatewayClient = new GatewayClient({
+        url: cfg.gateway.url,
+        token: cfg.gateway.token,
+        agentId: cfg.gateway.agentId,
+        logger,
+        retry: cfg.retry,
+        onReady: async () => { await gatewayBridge.onGatewayReady(); },
+        onMessage: (msg) => { gatewayBridge.handleGatewayMessage(msg); },
+        onClose: () => { gatewayBridge.handleGatewayDisconnected(); },
+      });
+
+      gatewayBridge.gatewayClient = gatewayClient;
+
+      // File resolver: manus-file:// → download → <MANUS_FILE />
+      const fileDownloadDir = path.join(workspaceDir, 'download');
+      const fileResolver = new ManusFileResolver({
+        manusApiBaseUrl,
+        manusApiKey,
+        downloadDir: fileDownloadDir,
+        uploadMetaDir,
+        logger,
+      });
+      gatewayBridge.fileResolver = fileResolver;
+
+      httpServer = new ManusClawHttpServer({
+        port: cfg.server.port,
+        host: cfg.server.host,
+        logger,
+        gatewayBridge,
+        workspaceDir,
+        openclawHome: process.env.OPENCLAW_HOME || '/home/node/.openclaw',
+        agentId: cfg.gateway.agentId,
+      });
+
+      gatewayClient.start();
+      httpServer.start();
+    };
+
     context.registerService({
       id: 'manus-claw',
-
-      start: (runtime) => {
-        const openclawConfig = runtime?.config?.loadConfig?.();
-        const cfg = resolveConfig(context.pluginConfig ?? {}, openclawConfig);
-        const workspaceDir = openclawConfig?.agents?.defaults?.workspace || '/home/node/.openclaw/workspace';
-
-        const logger = context.logger;
-
-        if (cfg.log.enabled) {
-          logger?.info?.(`[manus-claw] starting with gateway=${cfg.gateway.url} server=${cfg.server.host}:${cfg.server.port}`);
-        }
-
-        gatewayBridge = new GatewayBridge({ agentId: cfg.gateway.agentId, logger });
-
-        gatewayClient = new GatewayClient({
-          url: cfg.gateway.url,
-          token: cfg.gateway.token,
-          agentId: cfg.gateway.agentId,
-          logger,
-          retry: cfg.retry,
-          onReady: async () => { await gatewayBridge.onGatewayReady(); },
-          onMessage: (msg) => { gatewayBridge.handleGatewayMessage(msg); },
-          onClose: () => { gatewayBridge.handleGatewayDisconnected(); },
-        });
-
-        gatewayBridge.gatewayClient = gatewayClient;
-
-        // File resolver: manus-file:// → download → <MANUS_FILE />
-        const fileDownloadDir = path.join(workspaceDir, 'download');
-        const fileResolver = new ManusFileResolver({
-          manusApiBaseUrl,
-          manusApiKey,
-          downloadDir: fileDownloadDir,
-          uploadMetaDir,
-          logger,
-        });
-        gatewayBridge.fileResolver = fileResolver;
-
-        httpServer = new ManusClawHttpServer({
-          port: cfg.server.port,
-          host: cfg.server.host,
-          logger,
-          gatewayBridge,
-          workspaceDir,
-          openclawHome: process.env.OPENCLAW_HOME || '/home/node/.openclaw',
-          agentId: cfg.gateway.agentId,
-        });
-
-        gatewayClient.start();
-        httpServer.start();
-      },
-
+      start: (runtime) => startService(runtime),
       stop: () => {
         gatewayClient?.stop();
         httpServer?.stop();

@@ -46,12 +46,18 @@ export interface StepEventData extends BaseEventData {
   status: "pending" | "running" | "completed" | "failed"
   id: string
   description: string
+  /** Unix seconds the step started, matching BaseEventData.timestamp. */
+  started_at?: number
+  /** Set once the step finishes; authoritative and survives reload. */
+  duration_ms?: number
 }
 
 export interface MessageEventData extends BaseEventData {
   content: string;
   role: "user" | "assistant";
   attachments: FileInfo[];
+  /** Only set on the final summarize() message (TAREFA 5.2). */
+  follow_ups?: string[] | null;
 }
 
 export interface ErrorEventData extends BaseEventData {

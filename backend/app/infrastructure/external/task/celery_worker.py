@@ -75,9 +75,10 @@ async def _ensure_initialized() -> None:
         AgentDocument,
         SessionDocument,
         UserDocument,
-        ClawDocument,
+        ClawSessionDocument,
         ProjectDocument,
         FileFavoriteDocument,
+        ModelConfigDocument,
     )
 
     settings = get_settings()
@@ -88,9 +89,10 @@ async def _ensure_initialized() -> None:
             AgentDocument,
             SessionDocument,
             UserDocument,
-            ClawDocument,
+            ClawSessionDocument,
             ProjectDocument,
             FileFavoriteDocument,
+            ModelConfigDocument,
         ],
     )
     await get_redis().initialize()

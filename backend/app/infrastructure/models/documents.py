@@ -8,7 +8,7 @@ from app.infrastructure.models.memory_serialization import deserialize_memory, s
 from app.domain.models.session import Session, SessionStatus, TaskMode
 from app.domain.models.file import FileInfo
 from app.domain.models.user import User, UserRole
-from app.domain.models.claw import Claw, ClawStatus, ClawMessage
+from app.domain.models.claw import ClawSession, ClawStatus, ClawMessage, ClawToolEvent
 from app.domain.models.project import Project
 from pymongo import IndexModel, ASCENDING, DESCENDING
 
@@ -51,6 +51,7 @@ class UserDocument(BaseDocument[User], id_field="user_id", domain_model_class=Us
     fullname: str
     email: str  # Now required field for login
     password_hash: Optional[str] = None
+    avatar_file_id: Optional[str] = None
     role: UserRole = UserRole.USER
     is_active: bool = True
     created_at: datetime = datetime.now(timezone.utc)
@@ -121,8 +122,12 @@ class SessionDocument(BaseDocument[Session], id_field="session_id", domain_model
     is_shared: Optional[bool] = False
     is_favorite: Optional[bool] = False
     is_pinned: Optional[bool] = False
+    is_archived: Optional[bool] = False
+    rating: Optional[int] = None
     project_id: Optional[str] = None
     task_mode: Optional[TaskMode] = TaskMode.AGENT
+    model_name: Optional[str] = None
+    model_provider: Optional[str] = None
     class Settings:
         name = "sessions"
         indexes = [
@@ -140,6 +145,10 @@ class SessionDocument(BaseDocument[Session], id_field="session_id", domain_model
             IndexModel(
                 [("user_id", ASCENDING), ("is_pinned", DESCENDING), ("latest_message_at", DESCENDING)],
                 name="user_id_is_pinned_latest",
+            ),
+            IndexModel(
+                [("user_id", ASCENDING), ("is_archived", ASCENDING), ("latest_message_at", DESCENDING)],
+                name="user_id_is_archived_latest",
             ),
         ]
 
@@ -184,10 +193,55 @@ class FileFavoriteDocument(Document):
         ]
 
 
-class ClawDocument(BaseDocument[Claw], id_field="claw_id", domain_model_class=Claw):
-    """MongoDB document for Claw instance"""
-    claw_id: str
+class ModelConfigDocument(Document):
+    """An admin-registered LLM, with its credential encrypted at rest.
+
+    Replaces the former file-based registry (models.json). ``api_key_encrypted``
+    holds Fernet ciphertext (see infrastructure/security/secret_box.py) and is
+    never serialized to any API response — only ``api_key_hint`` is, so the UI
+    can show *which* key is stored without exposing it.
+    """
+    model_config_id: str
+    name: str                       # Human label shown in the dropdown
+    provider: str                   # LangChain provider: openai | google_genai | ollama | ...
+    model: str                      # Real model name handed to the provider SDK
+    base_url: Optional[str] = None
+    api_key_encrypted: Optional[bytes] = None
+    api_key_hint: str = ""
+    capabilities: Dict[str, Any] = {}   # Serialized ModelCapabilities
+    capabilities_auto_detected: bool = True
+    tool_profile: str = "full"          # full | lean
+    enabled_tools: List[str] = []       # Empty = whatever the profile implies
+    is_local: bool = False
+    description: Optional[str] = None
+    enabled: bool = True
+    sort_order: int = 0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    class Settings:
+        name = "model_configs"
+        indexes = [
+            IndexModel([("model_config_id", ASCENDING)], unique=True),
+            IndexModel([("enabled", ASCENDING), ("sort_order", ASCENDING)], name="enabled_sort"),
+        ]
+
+
+class ClawSessionDocument(BaseDocument[ClawSession], id_field="claw_session_id", domain_model_class=ClawSession):
+    """MongoDB document for a Manus Claw session.
+
+    Replaces the old 1:1-per-user ClawDocument/"claws" collection — a user
+    may now own several sessions, each with its own container lifecycle,
+    pinned model, and persistent Docker volume (see docker_claw_runtime.py)
+    that lets OpenClaw's own native memory survive killing/recreating the
+    container. No migration from the old collection: Claw data is inherently
+    ephemeral/TTL-based, so this is a clean cutover.
+    """
+    claw_session_id: str
     user_id: str
+    name: Optional[str] = None
+    model_id: str
+    volume_name: str
     container_name: Optional[str] = None
     container_ip: Optional[str] = None
     api_key: str
@@ -195,12 +249,15 @@ class ClawDocument(BaseDocument[Claw], id_field="claw_id", domain_model_class=Cl
     error_message: Optional[str] = None
     expires_at: Optional[datetime] = None
     messages: List[ClawMessage] = []
+    tool_events: List[ClawToolEvent] = []
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_active_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     class Settings:
-        name = "claws"
+        name = "claw_sessions"
         indexes = [
-            "claw_id",
-            IndexModel([("user_id", ASCENDING)], unique=True),  # One claw per user
+            "claw_session_id",
+            IndexModel([("user_id", ASCENDING)]),  # many sessions per user now
+            IndexModel([("api_key", ASCENDING)], unique=True),
         ]

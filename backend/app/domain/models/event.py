@@ -105,6 +105,8 @@ class MessageEvent(BaseEvent):
     role: Literal["user", "assistant"] = "assistant"
     message: str
     attachments: Optional[List[FileInfo]] = None
+    # TAREFA 5.2 — only ever set on the final summarize() message.
+    follow_ups: Optional[List[str]] = None
 
 class DoneEvent(BaseEvent):
     """Done event"""

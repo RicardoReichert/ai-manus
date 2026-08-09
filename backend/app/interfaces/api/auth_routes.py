@@ -1,14 +1,17 @@
+import io
 from typing import Optional
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Request, Response, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import logging
 
 from app.application.services.auth_service import AuthService
+from app.application.services.file_service import FileService
+from fastapi.responses import StreamingResponse
 from app.application.services.email_service import EmailService
 from app.application.errors.exceptions import (
     UnauthorizedError, NotFoundError, BadRequestError
 )
-from app.interfaces.dependencies import get_auth_service, get_current_user, get_email_service
+from app.interfaces.dependencies import get_auth_service, get_current_user, get_email_service, get_file_service
 from app.interfaces.schemas.base import APIResponse
 from app.interfaces.schemas.auth import (
     LoginRequest, RegisterRequest, ChangePasswordRequest, ChangeFullnameRequest, RefreshTokenRequest,
@@ -23,6 +26,9 @@ from app.domain.models.auth_session import AuthClientType
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+_AVATAR_MIME_WHITELIST = {"image/jpeg", "image/png", "image/webp"}
+_AVATAR_MAX_BYTES = 5 * 1024 * 1024  # 5MB
 
 
 def _set_session_cookie(response: Response, session_id: str, client: AuthClientType) -> None:
@@ -148,6 +154,80 @@ async def get_current_user_info(
     current_user: User = Depends(get_current_user)
 ) -> APIResponse[UserResponse]:
     return APIResponse.success(UserResponse.from_domain(current_user))
+
+
+@router.get("/avatar/{user_id}")
+async def get_avatar(
+    user_id: str,
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+    file_service: FileService = Depends(get_file_service),
+):
+    """Serve a user's profile photo. Any authenticated user may view any
+    other user's avatar — not owner-restricted, same as a display name."""
+    target_user = await auth_service.get_user_by_id(user_id)
+    if not target_user or not target_user.avatar_file_id:
+        raise NotFoundError("Avatar not found")
+    try:
+        file_data, file_info = await file_service.download_file(target_user.avatar_file_id)
+    except (FileNotFoundError, PermissionError, ValueError):
+        raise NotFoundError("Avatar not found")
+    headers = {
+        "Cache-Control": "private, max-age=31536000, immutable",
+        "X-Content-Type-Options": "nosniff",
+    }
+    return StreamingResponse(
+        file_data,
+        media_type=file_info.content_type or "image/jpeg",
+        headers=headers,
+    )
+
+
+@router.post("/avatar", response_model=APIResponse[UserResponse])
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+    file_service: FileService = Depends(get_file_service),
+) -> APIResponse[UserResponse]:
+    if file.content_type not in _AVATAR_MIME_WHITELIST:
+        raise BadRequestError("Avatar must be a JPEG, PNG, or WebP image")
+    contents = await file.read()
+    if len(contents) > _AVATAR_MAX_BYTES:
+        raise BadRequestError("Avatar image must be 5MB or smaller")
+
+    file_info = await file_service.upload_file(
+        file_data=io.BytesIO(contents),
+        filename=file.filename or "avatar",
+        user_id=current_user.id,
+        content_type=file.content_type,
+    )
+
+    old_avatar_file_id = current_user.avatar_file_id
+    updated_user = await auth_service.set_avatar(current_user.id, file_info.file_id)
+
+    if old_avatar_file_id:
+        try:
+            await file_service.delete_file(old_avatar_file_id, current_user.id)
+        except Exception as e:
+            logger.warning(f"Failed to delete previous avatar file {old_avatar_file_id}: {e}")
+
+    return APIResponse.success(UserResponse.from_domain(updated_user))
+
+
+@router.delete("/avatar", response_model=APIResponse[UserResponse])
+async def remove_avatar(
+    current_user: User = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+    file_service: FileService = Depends(get_file_service),
+) -> APIResponse[UserResponse]:
+    if current_user.avatar_file_id:
+        try:
+            await file_service.delete_file(current_user.avatar_file_id, current_user.id)
+        except Exception as e:
+            logger.warning(f"Failed to delete avatar file {current_user.avatar_file_id}: {e}")
+    updated_user = await auth_service.set_avatar(current_user.id, None)
+    return APIResponse.success(UserResponse.from_domain(updated_user))
 
 
 @router.get("/user/{user_id}", response_model=APIResponse[UserResponse])

@@ -34,6 +34,7 @@ services:
     volumes:
       - ./backend:/app  # Mount source code directory
       #- ./mcp.json:/etc/mcp.json # Mount MCP servers directory
+      - ./models.json:/etc/models.json # Mount model registry (see models.json.example)
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /app/__pycache__  # Avoid overwriting cache files
       - /app/.venv  # Avoid overwriting virtual environment
@@ -92,11 +93,13 @@ services:
       dockerfile: Dockerfile
     hostname: claw
     ports:
-      - "18788:18788" # manus-claw HTTP server
+      - "127.0.0.1:18788:18788" # manus-claw HTTP server (localhost-only: proxy endpoints have no auth of their own)
     environment:
       - CLAW_TTL_SECONDS=0        # No TTL in development (0 = unlimited)
       - MANUS_API_BASE_URL=http://backend:8000
       - MANUS_API_KEY=${CLAW_DEV_API_KEY:-manus-dev-api-key-changeme}
+      - CLAW_DOCKER_IN_DOCKER=${CLAW_DOCKER_IN_DOCKER:-true} # nested dockerd inside Claw's own container; never the host socket
+    privileged: true  # required for CLAW_DOCKER_IN_DOCKER — dockerd needs it to start its own nested daemon
     restart: unless-stopped
     networks:
       - manus-network

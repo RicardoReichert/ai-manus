@@ -22,6 +22,12 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
+const props = withDefaults(defineProps<{
+  name?: string;
+}>(), {
+  name: 'Manus',
+});
+
 const { t } = useI18n();
-const label = computed(() => t("{name}'s computer is inactive", { name: 'Manus' }));
+const label = computed(() => t("{name}'s computer is inactive", { name: props.name }));
 </script>

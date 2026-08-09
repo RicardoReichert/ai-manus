@@ -169,12 +169,19 @@ export const getFileTypeText = (filename: string): string => {
 
 /**
  * Format file size from bytes to human readable format
- * @param bytes - File size in bytes (null/undefined treated as 0)
+ *
+ * BUG-2 hardening: null/undefined means "size unknown" and must not be
+ * displayed as "0 B" — that reads as a real empty file. Only an actual
+ * numeric 0 renders as "0 B"; unknown size renders as an empty string so
+ * callers can omit the size segment entirely (see ChatAttachmentList.vue,
+ * TaskLogsDrawer.vue, ChatBoxFiles.vue).
+ * @param bytes - File size in bytes; null/undefined means unknown
  * @param decimals - Number of decimal places (default: 1)
- * @returns Formatted file size string
+ * @returns Formatted file size string, or '' when size is unknown
  */
 export function formatFileSize(bytes: number | null | undefined, decimals: number = 1): string {
-  if (!bytes || bytes === 0) return '0 B';
+  if (bytes === null || bytes === undefined) return '';
+  if (bytes === 0) return '0 B';
 
   const k = 1024;
   const dm = decimals < 0 ? 0 : decimals;

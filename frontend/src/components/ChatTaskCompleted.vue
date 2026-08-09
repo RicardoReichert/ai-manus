@@ -14,18 +14,40 @@
         <ChatMessageCopyButton :text="copyText" button-class="size-[28px]" />
       </div>
     </div>
+    <!-- TAREFA 5.2 — follow-up suggestions, clickable chips that send as-is -->
+    <div v-if="followUps.length > 0" class="flex flex-wrap items-center gap-[8px]">
+      <button
+        v-for="(suggestion, index) in followUps"
+        :key="`${index}-${suggestion}`"
+        type="button"
+        data-testid="follow-up-chip"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[var(--fill-tsp-white-main)] hover:bg-[var(--fill-tsp-white-dark)] text-[var(--text-secondary)] transition-colors clickable cursor-pointer"
+        @click="emit('followUp', suggestion)">
+        {{ suggestion }}
+      </button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { Check } from 'lucide-vue-next';
 import ChatMessageCopyButton from './ChatMessageCopyButton.vue';
 
-defineProps<{
+const props = withDefaults(defineProps<{
   visible: boolean;
   copyText: string;
+  followUps?: string[] | null;
+}>(), {
+  followUps: () => [],
+});
+
+const emit = defineEmits<{
+  (e: 'followUp', suggestion: string): void;
 }>();
 
 const { t } = useI18n();
+
+const followUps = computed(() => (props.followUps ?? []).filter((s) => s.trim().length > 0));
 </script>

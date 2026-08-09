@@ -15,6 +15,8 @@ export interface MessageContent extends BaseContent {
   content: string;
   /** User-turn attachments rendered above the text bubble (official ChatQuestion). */
   attachments?: FileInfo[];
+  /** Only set on the final assistant message (TAREFA 5.2). */
+  follow_ups?: string[] | null;
 }
 
 export interface ToolContent extends BaseContent {

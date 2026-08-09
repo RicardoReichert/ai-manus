@@ -6,47 +6,14 @@
       <div ref="observerRef"
         class="flex h-[56px] w-full shrink-0 items-center justify-between py-[12px] md:px-[24px] ps-[16px] pe-[20px] md:ps-[16px] md:pe-[20px] gap-1 border-b sticky top-0 z-10 flex-shrink-0 [-webkit-app-region:drag] bg-[var(--background-gray-main)] border-[var(--border-main)]">
         <div class="flex min-w-0 flex-1 items-center gap-1">
-          <div class="flex items-center pointer-events-auto relative" ref="modeMenuRef">
-            <button
-              type="button"
-              class="flex h-8 pt-[7px] md:pr-[6px] pr-[4px] pb-[7px] md:pl-[8px] pl-[6px] justify-center items-center gap-1 rounded-[8px] clickable hover:bg-[var(--fill-tsp-white-light)]"
-              :aria-expanded="showModeMenu"
-              aria-haspopup="menu"
-              @click="toggleModeMenu">
-              <span class="text-[var(--text-primary)] md:text-[18px] text-[16px] font-[500] md:leading-[22px] leading-[20px] truncate">Manus</span>
-              <span
-                v-if="taskMode === 'chat'"
-                class="text-[var(--text-tertiary)] text-xs flex h-5 py-0.5 px-1.5 items-center rounded-[6px] border border-[var(--border-dark)] flex-shrink-0">
-                Lite
-              </span>
-              <ChevronDown class="size-3.5 text-[var(--icon-tertiary)] shrink-0" :size="14" />
-            </button>
+          <div class="relative z-20 items-center flex-shrink-0 flex">
+            <ModelSelectorDropdown
+              :sessionId="sessionId"
+              :taskMode="taskMode"
+              @update:modelId="handleModelChange"
+              @update:taskMode="setTaskMode"
+            />
           </div>
-          <Teleport to="body">
-            <div
-              v-if="showModeMenu"
-              ref="modeMenuPanelRef"
-              role="menu"
-              class="fixed z-[1100] min-w-[180px] rounded-[12px] border border-[var(--border-light)] bg-[var(--background-menu-white)] shadow-[0px_8px_32px_0px_var(--shadow-S)] p-1"
-              :style="{ top: `${modeMenuPos.top}px`, left: `${modeMenuPos.left}px` }">
-              <button
-                type="button"
-                role="menuitem"
-                class="flex w-full items-center justify-between gap-2 px-3 py-2 rounded-[8px] text-sm text-[var(--text-primary)] hover:bg-[var(--fill-tsp-white-main)]"
-                @click="setTaskMode('agent')">
-                <span>{{ t('Agent') }}</span>
-                <Check v-if="taskMode === 'agent'" :size="16" class="text-[var(--icon-primary)]" />
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                class="flex w-full items-center justify-between gap-2 px-3 py-2 rounded-[8px] text-sm text-[var(--text-primary)] hover:bg-[var(--fill-tsp-white-main)]"
-                @click="setTaskMode('chat')">
-                <span>{{ t('Chat') }} · Lite</span>
-                <Check v-if="taskMode === 'chat'" :size="16" class="text-[var(--icon-primary)]" />
-              </button>
-            </div>
-          </Teleport>
           <div class="flex-1 min-w-[16px]"></div>
         </div>
 
@@ -130,6 +97,23 @@
             </PopoverContent>
           </Popover>
 
+          <!-- Usage Panel -->
+          <UsagePanel :sessionId="sessionId" />
+
+          <!-- Task Logs Drawer Button -->
+          <button type="button" @click="showTaskLogsDrawer = true"
+            class="flex items-center justify-center cursor-pointer rounded-md hover:bg-[var(--fill-tsp-white-light)] size-8 text-[var(--icon-secondary)]"
+            :title="t('Task Logs & Context')">
+            <FileText class="size-[18px]" :size="18" />
+          </button>
+
+          <!-- Library Shortcut Button -->
+          <button type="button" @click="router.push('/library')"
+            class="flex items-center justify-center cursor-pointer rounded-md hover:bg-[var(--fill-tsp-white-light)] size-8 text-[var(--icon-secondary)]"
+            :title="t('Library')">
+            <Bookmark class="size-[18px]" :size="18" />
+          </button>
+
           <button type="button" @click="handleFileListShow"
             class="flex items-center justify-center cursor-pointer rounded-md hover:bg-[var(--fill-tsp-white-light)] size-8"
             :title="t('View all files in this task')">
@@ -156,6 +140,7 @@
           <ChatMessage v-for="(message, index) in messages" :key="index" :message="message"
             :hideHeader="isConsecutiveAssistant(messages, index)"
             :showLiteBadge="taskMode === 'chat'"
+            :modelName="activeModelName"
             :showCopyActions="shouldShowAssistantCopyActions(index)"
             :isLastBeforeUser="isAssistantLastBeforeUser(index)"
             @toolClick="handleToolClick" />
@@ -164,7 +149,9 @@
             :copy-text="lastAssistantPlainText" />
           <ChatTaskCompleted
             :visible="showTaskCompleted"
-            :copy-text="lastAssistantPlainText" />
+            :copy-text="lastAssistantPlainText"
+            :follow-ups="lastAssistantFollowUps"
+            @follow-up="handleFollowUpClick" />
           <!-- AgentIsTyping: only fill the empty gap before first visible turn output -->
           <LoadingIndicator v-if="showThinking" :text="$t('{name} is thinking', { name: 'Manus' })" />
           <!-- Official running spacer when work is already visible (tools/steps/messages) -->
@@ -189,6 +176,13 @@
       @jumpToRealTime="jumpToRealTime"
       @selectTool="handleSelectTool"
       @useComputer="handleTakeControl" />
+    <TaskLogsDrawer
+      :open="showTaskLogsDrawer"
+      :sessionId="sessionId"
+      :taskMode="taskMode"
+      :logs="logs"
+      @close="showTaskLogsDrawer = false"
+    />
   </SimpleBar>
 </template>
 
@@ -202,13 +196,18 @@ import ChatMessage from '../components/ChatMessage.vue';
 import ChatTaskCompleted from '../components/ChatTaskCompleted.vue';
 import ChatWaitingContinue from '../components/ChatWaitingContinue.vue';
 import TakeControlBanner from '../components/TakeControlBanner.vue';
+import TaskLogsDrawer from '../components/TaskLogsDrawer.vue';
+import UsagePanel from '../components/UsagePanel.vue';
+import ModelSelectorDropdown from '../components/ModelSelectorDropdown.vue';
+import { useActiveModel } from '../composables/useActiveModel';
 import * as agentApi from '../api/agent';
 import { Message, MessageContent, ToolContent, StepContent, isConsecutiveAssistant } from '../types/message';
 import { PlanEventData, AgentEvent, type TerminalUpdateEventData, type FileUpdateEventData } from '../types/event';
+import type { TaskLogEntry } from '../types/taskLog';
 import { useAgentEvents } from '../composables/useAgentEvents';
 import { useSessionPhase } from '../composables/useSessionPhase';
 import ComputerPanel from '../components/ComputerPanel.vue'
-import { ArrowDown, FileSearch, Lock, Globe, Link, Check, Ellipsis, Pencil, Star, Trash, FolderPlus, Folder, FolderSync, Pin, ChevronDown } from 'lucide-vue-next';
+import { ArrowDown, FileSearch, Lock, Globe, Link, Check, Ellipsis, Pencil, Star, Trash, FolderPlus, Folder, FolderSync, Pin, FileText, Bookmark, Archive as ArchiveIcon } from 'lucide-vue-next';
 import ShareIcon from '@/components/icons/ShareIcon.vue';
 import { showErrorToast, showSuccessToast } from '../utils/toast';
 import type { FileInfo } from '../api/file';
@@ -233,6 +232,25 @@ const isFavorite = ref(false);
 const isPinned = ref(false);
 const projectId = ref<string | null>(null);
 const taskMode = ref<'agent' | 'chat'>('agent');
+const showTaskLogsDrawer = ref(false);
+
+const { selectedModelId, activeModelName, ensureModelsLoaded, setSelectedModel, hydrateFromSession } = useActiveModel();
+
+const handleModelChange = async (modelId: string) => {
+  if (!sessionId.value || modelId === selectedModelId.value) {
+    setSelectedModel(modelId);
+    return;
+  }
+  const prev = selectedModelId.value;
+  setSelectedModel(modelId);
+  try {
+    await agentApi.updateSessionModel(sessionId.value, modelId);
+  } catch (e) {
+    if (prev) setSelectedModel(prev);
+    console.error('Failed to update session model', e);
+    showErrorToast(t('Failed to switch model'));
+  }
+};
 
 // Create initial state factory
 const createInitialState = () => ({
@@ -247,6 +265,7 @@ const createInitialState = () => ({
   lastMessageTool: undefined as ToolContent | undefined,
   lastTool: undefined as ToolContent | undefined,
   lastEventId: undefined as string | undefined,
+  logs: [] as TaskLogEntry[],
   cancelCurrentChat: null as (() => void) | null,
   attachments: [] as FileInfo[],
   shareMode: 'private' as 'private' | 'public', // Default to private mode
@@ -269,6 +288,7 @@ const {
   lastNoMessageTool,
   lastTool,
   lastEventId,
+  logs,
   cancelCurrentChat,
   attachments,
   shareMode,
@@ -295,19 +315,7 @@ const simpleBarRef = ref<InstanceType<typeof SimpleBar>>();
 const observerRef = ref<HTMLDivElement>();
 const chatContainerRef = ref<HTMLDivElement>();
 const moreBtnRef = ref<HTMLElement | null>(null);
-const modeMenuRef = ref<HTMLElement | null>(null);
-const modeMenuPanelRef = ref<HTMLElement | null>(null);
-const modeMenuPos = ref({ top: 0, left: 0 });
-const showModeMenu = ref(false);
 const { showContextMenu } = useContextMenu();
-
-const toggleModeMenu = () => {
-  if (!showModeMenu.value && modeMenuRef.value) {
-    const r = modeMenuRef.value.getBoundingClientRect();
-    modeMenuPos.value = { top: r.bottom + 6, left: r.left };
-  }
-  showModeMenu.value = !showModeMenu.value;
-};
 
 const toolHistory = computed(() => {
   const tools: ToolContent[] = [];
@@ -334,7 +342,6 @@ const showTakeControlBanner = computed(() =>
 const chatPlaceholder = computed(() => t('Send message to Manus'));
 
 const setTaskMode = async (mode: 'agent' | 'chat') => {
-  showModeMenu.value = false;
   if (!sessionId.value || taskMode.value === mode) return;
   const prev = taskMode.value;
   taskMode.value = mode;
@@ -345,17 +352,6 @@ const setTaskMode = async (mode: 'agent' | 'chat') => {
     console.error('Failed to update task mode', e);
     showErrorToast(t('Failed to update mode'));
   }
-};
-
-const handleModeMenuOutside = (e: MouseEvent) => {
-  if (!showModeMenu.value) return;
-  const t = e.target as Node;
-  if (modeMenuRef.value?.contains(t) || modeMenuPanelRef.value?.contains(t)) return;
-  showModeMenu.value = false;
-};
-
-const handleModeMenuScroll = () => {
-  if (showModeMenu.value) showModeMenu.value = false;
 };
 
 const lastAssistantIndex = computed(() => {
@@ -370,6 +366,17 @@ const lastAssistantPlainText = computed(() => {
   if (i < 0) return '';
   return ((messages.value[i].content as MessageContent).content || '').trim();
 });
+
+// TAREFA 5.2 — only the final summarize() message ever carries follow_ups.
+const lastAssistantFollowUps = computed(() => {
+  const i = lastAssistantIndex.value;
+  if (i < 0) return [];
+  return (messages.value[i].content as MessageContent).follow_ups ?? [];
+});
+
+const handleFollowUpClick = (suggestion: string) => {
+  chat(suggestion);
+};
 
 /**
  * Official ChatReplyActions: show Copy under assistant replies that are not the
@@ -400,7 +407,7 @@ const isAssistantLastBeforeUser = (index: number) => {
 
 // Shared agent event -> message list conversion
 const { handleEvent: handleAgentEvent } = useAgentEvents(
-  { messages, title, plan, lastEventId, lastTool, lastNoMessageTool },
+  { messages, title, plan, lastEventId, lastTool, lastNoMessageTool, logs },
   {
     onToolActivity: (tool: ToolContent) => {
       if (realTime.value) {
@@ -558,6 +565,7 @@ const restoreSession = async () => {
   }
   const session = await agentApi.getSession(sessionId.value);
   applySessionMeta(session);
+  hydrateFromSession(session.model_name);
   realTime.value = false;
   hydrateFromSessionStatus(session.status);
   for (const event of session.events) {
@@ -603,7 +611,13 @@ const restoreSession = async () => {
   agentApi.clearUnreadMessageCount(sessionId.value);
 }
 
-
+const applySessionMeta = (session: Awaited<ReturnType<typeof agentApi.getSession>>) => {
+  shareMode.value = session.is_shared ? 'public' : 'private';
+  isFavorite.value = !!session.is_favorite;
+  isPinned.value = !!session.is_pinned;
+  projectId.value = session.project_id ?? null;
+  taskMode.value = session.task_mode === 'chat' ? 'chat' : 'agent';
+};
 
 onBeforeRouteUpdate((to, _, next) => {
   computerPanel.value?.hideComputerPanel();
@@ -617,34 +631,23 @@ onBeforeRouteUpdate((to, _, next) => {
   next();
 })
 
-const applySessionMeta = (session: Awaited<ReturnType<typeof agentApi.getSession>>) => {
-  shareMode.value = session.is_shared ? 'public' : 'private';
-  isFavorite.value = !!session.is_favorite;
-  isPinned.value = !!session.is_pinned;
-  projectId.value = session.project_id ?? null;
-  taskMode.value = session.task_mode === 'chat' ? 'chat' : 'agent';
-};
-
 // Initialize active conversation
-onMounted(() => {
-  document.addEventListener('mousedown', handleModeMenuOutside);
-  window.addEventListener('scroll', handleModeMenuScroll, true);
+onMounted(async () => {
   hideFilePreviewer();
+  ensureModelsLoaded();
+
   const routeParams = router.currentRoute.value.params;
   if (routeParams.sessionId) {
     // If sessionId is included in URL, use it directly
     sessionId.value = String(routeParams.sessionId) as string;
-    // Get initial message / mode from history.state (HomePage → new chat)
-    const message = history.state?.message as string | undefined;
-    const files = history.state?.files as FileInfo[] | undefined;
-    const seededMode = history.state?.taskMode as 'agent' | 'chat' | undefined;
+    // Get initial message from history.state
+    const message = history.state?.message;
+    const files: FileInfo[] = history.state?.files;
     history.replaceState({}, document.title);
-    if (seededMode === 'chat' || seededMode === 'agent') {
-      taskMode.value = seededMode;
-    }
     if (message || (files && files.length > 0)) {
-      // Initial-message path used to skip restoreSession(), so taskMode never
-      // left the default 'agent'. Load session meta first, then send.
+      // Initial-message path used to skip restoreSession(), so taskMode (and
+      // the rest of the session meta) never left its default — load it
+      // first, then send, so the header reflects the session's real mode.
       void (async () => {
         try {
           const session = await agentApi.getSession(sessionId.value!);
@@ -661,8 +664,6 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  document.removeEventListener('mousedown', handleModeMenuOutside);
-  window.removeEventListener('scroll', handleModeMenuScroll, true);
   const prevSessionId = sessionId.value;
   if (cancelCurrentChat.value) {
     cancelCurrentChat.value();
@@ -846,8 +847,8 @@ const handleMoreClick = async (event: MouseEvent | KeyboardEvent) => {
   const target = (moreBtnRef.value || event.currentTarget) as HTMLElement;
   if (!sessionId.value) return;
 
-  // Official session-detail … menu: Rename / Move to project / — / Pin / Favorite / Delete
-  // (skip scheduled / archive — no local product support)
+  // Official session-detail … menu: Rename / Move to project / — / Pin / Favorite / Archive / Delete
+  // (skip "Agendar tarefa" — no scheduling backend yet, see TAREFA 15.2)
   try {
     const res = await getProjects();
     projects.value = res.projects ?? [];
@@ -881,6 +882,7 @@ const handleMoreClick = async (event: MouseEvent | KeyboardEvent) => {
   items.push(createSeparator());
   items.push(createMenuItem('pin', pinnedNow ? t('Unpin') : t('Pin'), { icon: Pin }));
   items.push(createMenuItem('favorite', favoritedNow ? t('Unfavorite') : t('Add to favorites'), { icon: Star }));
+  items.push(createMenuItem('archive', t('Archive task'), { icon: ArchiveIcon }));
   items.push(createDangerMenuItem('delete', t('Delete'), { icon: Trash }));
 
   showContextMenu(sessionId.value, target, items, async (key: string) => {
@@ -920,6 +922,15 @@ const handleMoreClick = async (event: MouseEvent | KeyboardEvent) => {
         showSuccessToast(result.is_favorite ? t('Added to favorite') : t('Removed from favorite'));
       } catch {
         showErrorToast(t('Failed to update favorite'));
+      }
+    } else if (key === 'archive') {
+      if (!sessionId.value) return;
+      try {
+        await agentApi.archiveSession(sessionId.value);
+        showSuccessToast(t('Task archived'));
+        router.push('/');
+      } catch {
+        showErrorToast(t('Failed to archive task'));
       }
     } else if (key === 'new_project') {
       if (!sessionId.value) return;

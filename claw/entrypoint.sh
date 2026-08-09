@@ -19,8 +19,13 @@ if [ -z "${OPENCLAW_GATEWAY_TOKEN}" ]; then
     export OPENCLAW_GATEWAY_TOKEN
 fi
 
+# Clean up MANUS_API_BASE_URL so appending /v1 does not produce /v1/v1
+MANUS_BASE="${MANUS_API_BASE_URL:-http://backend:8000}"
+MANUS_BASE="${MANUS_BASE%/v1}"
+MANUS_BASE="${MANUS_BASE%/}"
+
 echo "[entrypoint] Gateway token: ${OPENCLAW_GATEWAY_TOKEN}"
-echo "[entrypoint] Manus API base URL: ${MANUS_API_BASE_URL:-http://backend:8000}/v1"
+echo "[entrypoint] Manus API base URL: ${MANUS_BASE}/v1"
 
 # Write openclaw.json configuration
 cat > "${CONFIG_FILE}" << EOF
@@ -40,6 +45,13 @@ cat > "${CONFIG_FILE}" << EOF
       "maxConcurrent": 4
     }
   },
+  "browser": {
+    "enabled": true,
+    "headless": true
+  },
+  "tools": {
+    "alsoAllow": ["browser"]
+  },
   "gateway": {
     "port": 18789,
     "mode": "local",
@@ -47,12 +59,15 @@ cat > "${CONFIG_FILE}" << EOF
     "auth": {
       "mode": "token",
       "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    },
+    "terminal": {
+      "enabled": true
     }
   },
   "plugins": {
     "load": {
       "paths": [
-        "/home/node/.openclaw/extensions/manus-claw"
+        "/home/node/.openclaw/extensions"
       ]
     },
     "entries": {
@@ -85,7 +100,7 @@ cat > "${CONFIG_FILE}" << EOF
     "mode": "merge",
     "providers": {
       "manus-proxy": {
-        "baseUrl": "${MANUS_API_BASE_URL:-http://backend:8000}/v1",
+        "baseUrl": "${MANUS_BASE}/v1",
         "apiKey": "${MANUS_API_KEY}",
         "api": "openai-completions",
         "models": [
@@ -104,15 +119,66 @@ EOF
 
 echo "[entrypoint] Configuration written to ${CONFIG_FILE}"
 
-# Start OpenClaw gateway as a child process so this script stays PID 1 and can
-# act as a watchdog: forward shutdown signals and force-kill if the gateway
-# does not exit within the grace period. This guarantees the container always
-# exits when the TTL expires (or on docker stop), even if the Node process
-# hangs during graceful shutdown.
+# The container now starts as root (dockerd needs root, see below), so
+# anything written into the config volume above must be handed back to the
+# `node` user before the gateway (which runs as `node`) can use it.
+chown -R node:node "${CONFIG_DIR}"
+# OpenClaw's plugin loader only trusts root-owned plugin directories —
+# the blanket chown above (needed so the `node` user can write config)
+# otherwise flags manus-claw as "blocked plugin candidate: suspicious
+# ownership" (confirmed live via `openclaw sandbox explain`).
+chown -R root:root "${CONFIG_DIR}/extensions"
+
+# ---------------------------------------------------------------------------
+# Docker-in-Docker: only when explicitly opted in (CLAW_DOCKER_IN_DOCKER=true,
+# set by docker_claw_runtime.py alongside `privileged=True` on the container
+# itself — dockerd cannot start without it). This is the container's OWN
+# nested daemon and socket, at the default /var/run/docker.sock *inside this
+# container* — never the host's. `docker ps` from in here only ever shows
+# containers this nested daemon created.
+# ---------------------------------------------------------------------------
+DOCKERD_PID=""
+if [ "${CLAW_DOCKER_IN_DOCKER}" = "true" ]; then
+    echo "[entrypoint] CLAW_DOCKER_IN_DOCKER=true, starting nested dockerd (storage-driver=vfs)"
+    mkdir -p /var/lib/docker
+    # Guard against a stale /var/run/docker.pid: the docker-ce apt package's
+    # postinst briefly starts+stops dockerd during image build, and that
+    # leftover pid file can get committed into the image layer. At real
+    # container boot, an early entrypoint process can coincidentally reuse
+    # that same low PID, so dockerd's "is it still running?" check falsely
+    # believes a daemon is already up and refuses to start — permanently,
+    # since nothing here retries. Always start from a clean pid/socket state.
+    rm -f /var/run/docker.pid /var/run/docker.sock
+    dockerd --storage-driver=vfs > /var/log/dockerd.log 2>&1 &
+    DOCKERD_PID=$!
+
+    DOCKERD_READY=false
+    for _ in $(seq 1 30); do
+        if docker version >/dev/null 2>&1; then
+            DOCKERD_READY=true
+            break
+        fi
+        sleep 1
+    done
+    if [ "${DOCKERD_READY}" = "true" ]; then
+        echo "[entrypoint] Nested dockerd ready (pid ${DOCKERD_PID})"
+    else
+        echo "[entrypoint] Nested dockerd did not become ready within 30s — continuing without it, see /var/log/dockerd.log"
+    fi
+fi
+
+# Start OpenClaw gateway as a child process, running as the unprivileged
+# `node` user (the config file above already has every value it needs
+# baked in as literal strings, so the gateway process itself needs no env
+# vars — only dockerd above needs root). This script stays PID 1 and acts
+# as a watchdog: forward shutdown signals and force-kill if the gateway
+# does not exit within the grace period. This guarantees the container
+# always exits when the TTL expires (or on docker stop), even if the Node
+# process hangs during graceful shutdown.
 CLAW_TTL_SECONDS="${CLAW_TTL_SECONDS:-0}"
 CLAW_SHUTDOWN_GRACE_SECONDS="${CLAW_SHUTDOWN_GRACE_SECONDS:-30}"
 
-openclaw gateway &
+sudo -H -u node openclaw gateway &
 GATEWAY_PID=$!
 
 shutdown_gateway() {
@@ -120,12 +186,18 @@ shutdown_gateway() {
     kill -TERM "${GATEWAY_PID}" 2>/dev/null || true
     for _ in $(seq 1 "${CLAW_SHUTDOWN_GRACE_SECONDS}"); do
         if ! kill -0 "${GATEWAY_PID}" 2>/dev/null; then
-            return 0
+            break
         fi
         sleep 1
     done
-    echo "[entrypoint] Gateway did not stop within ${CLAW_SHUTDOWN_GRACE_SECONDS}s, force killing"
-    kill -KILL "${GATEWAY_PID}" 2>/dev/null || true
+    if kill -0 "${GATEWAY_PID}" 2>/dev/null; then
+        echo "[entrypoint] Gateway did not stop within ${CLAW_SHUTDOWN_GRACE_SECONDS}s, force killing"
+        kill -KILL "${GATEWAY_PID}" 2>/dev/null || true
+    fi
+    if [ -n "${DOCKERD_PID}" ]; then
+        echo "[entrypoint] Shutting down nested dockerd (pid ${DOCKERD_PID})"
+        kill -TERM "${DOCKERD_PID}" 2>/dev/null || true
+    fi
 }
 trap shutdown_gateway TERM INT
 

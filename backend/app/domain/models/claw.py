@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Any, Optional, List
 from datetime import datetime, UTC
 from pydantic import BaseModel, Field
 from enum import Enum
@@ -21,6 +21,26 @@ class ClawMessage(BaseModel):
     attachments: Optional[List[ClawAttachment]] = None
 
 
+class ClawToolEvent(BaseModel):
+    """A single completed tool call in a Claw session, persisted so the
+    Computer panel's Tools tab can restore its history across reloads and
+    container restarts — mirrors ClawMessage's persistence role but for
+    structured tool-call data instead of chat text.
+
+    Only ever written once a call reaches its terminal 'result' phase (see
+    ClawDomainService.process_chat_stream) — in-flight/never-completed
+    calls are not persisted, matching how in-flight assistant text isn't
+    persisted until the stream finishes either.
+    """
+    tool_call_id: str
+    name: str
+    args: Optional[dict] = None
+    result: Optional[Any] = None
+    is_error: bool = False
+    truncated: bool = False
+    timestamp: int  # Unix timestamp (seconds), same convention as ClawMessage.timestamp
+
+
 class ClawStatus(str, Enum):
     CREATING = "creating"
     RUNNING = "running"
@@ -28,22 +48,58 @@ class ClawStatus(str, Enum):
     ERROR = "error"
 
 
-class Claw(BaseModel):
-    """Claw domain model - represents a user's OpenClaw instance"""
+class ClawSession(BaseModel):
+    """A persistent Manus Claw conversation.
+
+    A user may have several of these (unlike the old 1:1 ``Claw``). The
+    session is the durable identity: its ``volume_name`` — a Docker volume
+    mounted at OpenClaw's home directory (``/home/node/.openclaw``) inside
+    the container — is what makes OpenClaw's own native conversational
+    memory survive killing and recreating the *container*. A container is
+    disposable; a session is not. Only an explicit delete removes a
+    session's volume, so switching models (only possible by restarting with
+    a fresh container attached to the same volume) never loses context, and
+    a brand new session naturally starts with zero memory (no shared volume).
+
+    ``model_id`` is required at creation and only changes via an explicit
+    restart — never silently, and never while a container is live.
+    """
     id: str
     user_id: str
+    name: Optional[str] = None
+    model_id: str
+    volume_name: str
     container_name: Optional[str] = None
     container_ip: Optional[str] = None
-    api_key: str  # Per-user OpenAI-compatible API key for LLM proxy
+    # Per-session now, not per-user: the backend resolves which model a
+    # /v1/chat/completions proxy call should target by looking up the
+    # session that owns the Bearer api_key, so each session needs its own.
+    api_key: str
     status: ClawStatus = ClawStatus.CREATING
     error_message: Optional[str] = None
     expires_at: Optional[datetime] = None
+    # Not carried on the domain object, same as the previous Claw model:
+    # message history is large and accessed separately via
+    # ClawSessionRepository.get_messages/append_message, not round-tripped
+    # through every load/save of the session record itself.
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    last_active_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def http_base_url(self) -> Optional[str]:
         """HTTP base URL for the manus-claw plugin server"""
         if self.container_ip:
             return f"http://{self.container_ip}:18788"
+        return None
+
+    @property
+    def terminal_ws_base_url(self) -> Optional[str]:
+        """WebSocket base URL for the manus-claw plugin's Operator Terminal
+        endpoint (``ws://<container_ip>:18788/terminal/<terminal_session_id>``,
+        see Task 5). Same host/port as ``http_base_url``, just the ``ws``
+        scheme — the plugin serves both HTTP and this WS upgrade off one
+        server."""
+        if self.container_ip:
+            return f"ws://{self.container_ip}:18788"
         return None

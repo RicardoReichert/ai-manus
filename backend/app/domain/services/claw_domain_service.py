@@ -7,70 +7,98 @@ from typing import Optional, List
 
 import httpx
 
-from app.domain.models.claw import Claw, ClawStatus, ClawMessage, ClawAttachment
+from app.domain.models.claw import ClawSession, ClawStatus, ClawMessage, ClawAttachment, ClawToolEvent
 from app.domain.external.claw import ClawRuntime, ClawClient
-from app.domain.repositories.claw_repository import ClawRepository
+from app.domain.repositories.claw_repository import ClawSessionRepository
 
 logger = logging.getLogger(__name__)
 
 
 def _generate_api_key() -> str:
-    """Generate a secure per-user API key for LLM proxy authentication"""
+    """Generate a secure per-session API key for LLM proxy authentication"""
     return f"manus-{secrets.token_urlsafe(32)}"
 
 
-def _generate_claw_id() -> str:
+def _generate_session_id() -> str:
     return str(uuid.uuid4())
 
 
+def _volume_name_for(session_id: str) -> str:
+    """Deterministic Docker volume name for a session's persistent state.
+
+    Same session_id always maps to the same volume — that's what lets a
+    restart (destroy container, create a new one) reattach to the exact
+    volume that carries OpenClaw's native memory, instead of accidentally
+    diverging.
+    """
+    return f"claw-session-vol-{session_id[:8]}"
+
+
 class ClawDomainService:
-    """Domain service for Claw lifecycle, history merge, and auth logic.
+    """Domain service for Claw session lifecycle, history merge, and auth logic.
 
     This service encapsulates pure business rules that are independent of
     application-level concerns (event bus, background task scheduling, etc.).
+
+    A user may own several sessions (unlike the old 1:1 Claw). A session is
+    the durable identity — its ``volume_name`` is what survives a container
+    being destroyed and recreated; the container itself is disposable. The
+    model is chosen at session creation and only ever changes via
+    ``restart_session``, never silently.
     """
 
     def __init__(
         self,
-        claw_repository: ClawRepository,
+        claw_session_repository: ClawSessionRepository,
         claw_runtime: ClawRuntime,
         claw_client: ClawClient,
     ):
-        self.claw_repository = claw_repository
+        self.claw_repository = claw_session_repository
         self.claw_runtime = claw_runtime
         self.claw_client = claw_client
 
     # ------------------------------------------------------------------
-    # Claw CRUD / lifecycle
+    # Session CRUD / lifecycle
     # ------------------------------------------------------------------
 
-    async def get_or_create_api_key(self, user_id: str) -> str:
-        claw = await self.claw_repository.get_by_user_id(user_id)
-        if claw:
-            return claw.api_key
-        claw = Claw(
-            id=_generate_claw_id(),
-            user_id=user_id,
-            api_key=_generate_api_key(),
-            status=ClawStatus.STOPPED,
-        )
-        created = await self.claw_repository.create(claw)
-        return created.api_key
+    async def list_sessions(self, user_id: str) -> List[ClawSession]:
+        sessions = await self.claw_repository.list_by_user_id(user_id)
+        checked = [await self._check_expiry(s) for s in sessions]
+        return [s for s in checked if s is not None]
 
-    async def get_claw(self, user_id: str) -> Optional[Claw]:
-        claw = await self.claw_repository.get_by_user_id(user_id)
-        if claw and claw.status == ClawStatus.RUNNING:
-            expires = claw.expires_at.replace(tzinfo=UTC) if claw.expires_at and claw.expires_at.tzinfo is None else claw.expires_at
-            if expires and datetime.now(UTC) >= expires:
-                logger.info(f"[claw] expired for user={user_id}, auto-deleting")
-                await self.claw_runtime.destroy(claw.container_name)
-                await self.claw_repository.delete_by_user_id(user_id)
-                return None
-            elif claw.http_base_url and not await self._health_check(claw.http_base_url):
-                logger.warning(f"[claw] health check failed for user={user_id}, marking stopped")
-                claw.status = ClawStatus.STOPPED
-                await self.claw_repository.update(claw)
-        return claw
+    async def get_session(self, user_id: str, session_id: str) -> Optional[ClawSession]:
+        """Get a session, scoped to its owner — never returns another user's session."""
+        session = await self.claw_repository.get_by_id(session_id)
+        if not session or session.user_id != user_id:
+            return None
+        return await self._check_expiry(session)
+
+    async def _check_expiry(self, session: ClawSession) -> Optional[ClawSession]:
+        """Lazily stop an expired session's container, or mark it stopped if
+        unreachable. Unlike the old per-user Claw, expiry never deletes the
+        record or its volume — only explicit deletion does that. A session
+        must stay visible/restartable in the list after its container dies.
+        """
+        if session.status != ClawStatus.RUNNING:
+            return session
+
+        expires = session.expires_at
+        if expires and expires.tzinfo is None:
+            expires = expires.replace(tzinfo=UTC)
+        if expires and datetime.now(UTC) >= expires:
+            logger.info(f"[claw] session {session.id} expired, stopping container")
+            await self.claw_runtime.destroy(session.container_name)
+            session.status = ClawStatus.STOPPED
+            session.container_name = None
+            session.container_ip = None
+            return await self.claw_repository.update(session)
+
+        if session.http_base_url and not await self._health_check(session.http_base_url):
+            logger.warning(f"[claw] session {session.id} health check failed, marking stopped")
+            session.status = ClawStatus.STOPPED
+            return await self.claw_repository.update(session)
+
+        return session
 
     @staticmethod
     async def _health_check(base_url: str) -> bool:
@@ -81,104 +109,126 @@ class ClawDomainService:
         except Exception:
             return False
 
-    async def get_claw_by_api_key(self, api_key: str) -> Optional[Claw]:
-        return await self.claw_repository.get_by_api_key(api_key)
+    async def create_session(
+        self, user_id: str, model_id: str, name: Optional[str] = None,
+    ) -> ClawSession:
+        """Create a new session with a fresh (empty-memory) volume.
 
-    async def prepare_claw_for_creation(self, user_id: str) -> Optional[Claw]:
-        """Prepare a Claw record for creation (or return existing running one).
-
-        Returns the Claw object ready for async provisioning, or the already-running
-        instance. Returns ``None`` only when a new/updated Claw was persisted and the
-        caller should kick off ``provision_claw_instance``.
+        ``model_id`` is required — there is no "pick later" path; a session
+        always starts pinned to a specific model, per the product decision
+        that model choice is mandatory at creation.
         """
-        existing = await self.claw_repository.get_by_user_id(user_id)
-        if existing and existing.status == ClawStatus.RUNNING:
-            return existing
-
-        if existing:
-            api_key = existing.api_key
-            claw_id = existing.id
-        else:
-            api_key = _generate_api_key()
-            claw_id = _generate_claw_id()
-
-        claw = Claw(
-            id=claw_id,
+        session_id = _generate_session_id()
+        session = ClawSession(
+            id=session_id,
             user_id=user_id,
-            api_key=api_key,
+            name=name,
+            model_id=model_id,
+            volume_name=_volume_name_for(session_id),
+            api_key=_generate_api_key(),
             status=ClawStatus.CREATING,
         )
-        if existing:
-            claw = await self.claw_repository.update(claw)
-        else:
-            claw = await self.claw_repository.create(claw)
-        return claw
+        return await self.claw_repository.create(session)
 
-    async def provision_claw_instance(self, claw: Claw, ttl_seconds: Optional[int] = None) -> None:
-        """Provision the underlying claw runtime instance and update the record.
+    async def provision_session(self, session: ClawSession, ttl_seconds: Optional[int] = None) -> None:
+        """Provision (or reprovision) the container behind a session.
 
-        Intended to be called in a background task after ``prepare_claw_for_creation``.
+        Intended to be called in a background task after ``create_session``
+        or ``restart_session``. Always reuses ``session.volume_name`` — never
+        generates a new one — so OpenClaw's native memory for this session
+        carries over regardless of how many times this runs.
         """
         try:
-            # Capture the start time before creating the instance so the DB
-            # expiry never lags behind the container's own TTL clock (the
-            # container starts counting down as soon as it boots).
             started_at = datetime.now(UTC)
-            info = await self.claw_runtime.create(claw.id, claw.api_key)
-            claw.container_name = info.instance_name
-            claw.container_ip = info.address
-            if claw.http_base_url:
-                ready = await self.claw_runtime.wait_for_ready(claw.http_base_url)
+            info = await self.claw_runtime.create(session.id, session.api_key, session.volume_name)
+            session.container_name = info.instance_name
+            session.container_ip = info.address
+            await self.claw_repository.update(session)
+            if session.http_base_url:
+                ready = await self.claw_runtime.wait_for_ready(session.http_base_url)
                 if not ready:
-                    raise RuntimeError(f"Claw service not ready: {claw.http_base_url}")
-            logger.info(f"Claw created: id={claw.id} address={info.address}")
-            claw.status = ClawStatus.RUNNING
+                    raise RuntimeError(f"Claw service not ready: {session.http_base_url}")
+            logger.info(f"Claw session provisioned: id={session.id} address={info.address}")
+            session.status = ClawStatus.RUNNING
+            session.error_message = None
             if ttl_seconds and ttl_seconds > 0:
-                claw.expires_at = started_at + timedelta(seconds=ttl_seconds)
-            await self.claw_repository.update(claw)
-            await self.claw_repository.append_message(
-                claw.user_id, "assistant", "i18n:Claw is ready, let's chat!",
-            )
+                session.expires_at = started_at + timedelta(seconds=ttl_seconds)
+            await self.claw_repository.update(session)
         except Exception as e:
-            logger.error(f"Failed to create claw instance: {e}")
-            claw.status = ClawStatus.ERROR
-            claw.error_message = str(e)
-            await self.claw_runtime.destroy(claw.container_name)
-            claw.container_name = None
-            claw.container_ip = None
+            logger.error(f"Failed to provision claw session {session.id}: {e}")
+            session.status = ClawStatus.ERROR
+            session.error_message = str(e)
+            await self.claw_runtime.destroy(session.container_name)
+            session.container_name = None
+            session.container_ip = None
             try:
-                await self.claw_repository.update(claw)
+                await self.claw_repository.update(session)
             except Exception:
                 pass
 
-    async def delete_claw(self, user_id: str) -> bool:
-        """Delete the claw record from MongoDB and destroy its runtime instance.
+    async def restart_session(
+        self, user_id: str, session_id: str, model_id: str,
+    ) -> Optional[ClawSession]:
+        """Kill the current container (if any) and start a fresh one on the
+        SAME volume, pointed at ``model_id``.
 
-        ``ClawRuntime.destroy`` is best-effort: for the fixed runtime (dev) it is
-        a no-op, so the shared dev container stays alive and its native history
-        can be recovered on recreate.
+        This is the only way to change a session's model — the model is
+        pinned while a container is live, matching the product requirement
+        that switching models is a deliberate restart, not a silent runtime
+        swap. Because the volume is untouched, OpenClaw's native memory for
+        this session survives the restart in full, even across a model
+        change — verified with a real container: a second, freshly-started
+        container correctly recalled information only ever told to the
+        first, now-destroyed one.
         """
-        claw = await self.claw_repository.get_by_user_id(user_id)
-        if not claw:
+        session = await self.get_session(user_id, session_id)
+        if not session:
+            return None
+
+        if session.container_name:
+            await self.claw_runtime.destroy(session.container_name)
+
+        session.model_id = model_id
+        session.status = ClawStatus.CREATING
+        session.container_name = None
+        session.container_ip = None
+        session.error_message = None
+        session = await self.claw_repository.update(session)
+        return session
+
+    async def delete_session(self, user_id: str, session_id: str) -> bool:
+        """Delete a session's record, its container, AND its volume.
+
+        This is the only operation that actually discards a session's
+        memory — restarting (even with a different model) preserves the
+        volume; only this removes it.
+        """
+        session = await self.get_session(user_id, session_id)
+        if not session:
             return False
-        await self.claw_runtime.destroy(claw.container_name)
-        return await self.claw_repository.delete_by_user_id(user_id)
+        await self.claw_runtime.destroy(session.container_name)
+        await self.claw_runtime.destroy_volume(session.volume_name)
+        return await self.claw_repository.delete_by_id(session_id)
 
     # ------------------------------------------------------------------
     # History merge
     # ------------------------------------------------------------------
 
-    async def get_history(self, user_id: str) -> List[ClawMessage]:
+    async def get_history(self, user_id: str, session_id: str) -> List[ClawMessage]:
         """Merge MongoDB messages with OpenClaw's native session history."""
-        db_msgs = await self.claw_repository.get_messages(user_id)
+        session = await self.get_session(user_id, session_id)
+        if not session:
+            return []
+
+        db_msgs = [m for m in await self.claw_repository.get_messages(session_id) if not self._is_no_reply(m.content)]
 
         claw_msgs: List[ClawMessage] = []
         try:
-            claw = await self.claw_repository.get_by_user_id(user_id)
-            if claw and claw.http_base_url and claw.status == ClawStatus.RUNNING:
+            if session.http_base_url and session.status == ClawStatus.RUNNING:
                 claw_msgs = await self.claw_client.get_history(
-                    claw.http_base_url, "default", 200,
+                    session.http_base_url, session.id, 200,
                 )
+                claw_msgs = [m for m in claw_msgs if not self._is_no_reply(m.content)]
         except Exception as e:
             logger.warning(f"[claw-history] failed to fetch claw native history: {e}")
 
@@ -186,6 +236,25 @@ class ClawDomainService:
             return db_msgs
 
         return self._merge_histories(db_msgs, claw_msgs)
+
+    async def get_tool_events(self, user_id: str, session_id: str) -> List[ClawToolEvent]:
+        """Get the persisted tool-call history for a session (Tools tab
+        restore). Unlike ``get_history``, there's no plugin-side source to
+        merge with — tool call args are never exposed by the plugin's own
+        ``/history`` endpoint (see ``process_chat_stream`` below), so Mongo
+        is the only source of truth here.
+        """
+        session = await self.get_session(user_id, session_id)
+        if not session:
+            return []
+        return await self.claw_repository.get_tool_events(session_id)
+
+    @staticmethod
+    def _is_no_reply(content: Optional[str]) -> bool:
+        """True for OpenClaw's literal "NO_REPLY" sentinel — emitted as the
+        entire message when the agent deliberately chooses not to reply.
+        Never meant to be shown or stored verbatim."""
+        return bool(content) and content.strip() == "NO_REPLY"
 
     @staticmethod
     def _normalize_ts(ts: int) -> int:
@@ -280,15 +349,24 @@ class ClawDomainService:
     # ------------------------------------------------------------------
 
     async def process_chat_stream(
-        self, user_id: str, base_url: str, message: str, session_id: str,
+        self, session_id: str, base_url: str, message: str,
     ):
         """Stream chat from the claw client, persisting messages.
 
         Yields raw chunk dicts from the claw client. The caller is responsible
-        for broadcasting chunks to WebSocket consumers.
+        for broadcasting chunks to WebSocket consumers. The OpenClaw-native
+        session key sent to the container is always this session's own id —
+        there is no separate user-suppliable session_id anymore, since the
+        session *is* the resource now.
         """
         assistant_content: list[str] = []
         file_attachments: list[ClawAttachment] = []
+        # Tool calls stream across multiple chunks (start -> update* ->
+        # result) keyed by toolCallId; only the 'start' phase carries args,
+        # so accumulate that here and persist one ClawToolEvent per
+        # completed call at 'result' — not once per chunk, since 'update'
+        # frames stream too frequently to write on each one.
+        tool_call_args: dict[str, dict] = {}
 
         try:
             async for chunk in self.claw_client.chat_stream(base_url, message, session_id):
@@ -304,41 +382,92 @@ class ClawDomainService:
                         file_url=chunk.get("file_url"),
                     ))
 
+                if chunk.get("type") == "tool":
+                    tool_call_id = chunk.get("toolCallId")
+                    phase = chunk.get("phase")
+                    if phase == "start" and tool_call_id:
+                        tool_call_args[tool_call_id] = chunk.get("args") or {}
+                    elif phase == "result" and tool_call_id:
+                        await self.claw_repository.append_tool_event(
+                            session_id,
+                            ClawToolEvent(
+                                tool_call_id=tool_call_id,
+                                name=chunk.get("name") or "tool",
+                                args=tool_call_args.pop(tool_call_id, None),
+                                result=chunk.get("result"),
+                                is_error=bool(chunk.get("isError")),
+                                timestamp=int(datetime.now(UTC).timestamp()),
+                            ),
+                        )
+
                 yield chunk
 
         finally:
             if file_attachments:
                 await self.claw_repository.append_message(
-                    user_id, "attachments", "assistant", attachments=file_attachments,
+                    session_id, "attachments", "assistant", attachments=file_attachments,
                 )
-            if assistant_content:
+            joined_content = "".join(assistant_content)
+            if joined_content and not self._is_no_reply(joined_content):
                 await self.claw_repository.append_message(
-                    user_id, "assistant", "".join(assistant_content),
+                    session_id, "assistant", joined_content,
                 )
 
-    async def validate_claw_for_chat(self, user_id: str) -> Claw:
-        """Validate that a user has a running claw instance ready for chat.
+    async def validate_session_for_chat(self, user_id: str, session_id: str) -> ClawSession:
+        """Validate that a session is running and ready for chat.
 
-        Returns the Claw instance or raises ValueError.
+        Returns the session or raises ValueError.
         """
-        claw = await self.claw_repository.get_by_user_id(user_id)
-        if not claw or not claw.http_base_url:
-            raise ValueError("No running claw instance found")
-        if claw.status != ClawStatus.RUNNING:
-            raise ValueError(f"Claw is not running (status: {claw.status})")
-        return claw
+        session = await self.get_session(user_id, session_id)
+        if not session or not session.http_base_url:
+            raise ValueError("No running claw session found")
+        if session.status != ClawStatus.RUNNING:
+            raise ValueError(f"Claw session is not running (status: {session.status})")
+        return session
 
     # ------------------------------------------------------------------
     # File proxy
     # ------------------------------------------------------------------
 
-    async def get_file(self, user_id: str, filename: str) -> tuple[bytes, str]:
-        claw = await self.claw_repository.get_by_user_id(user_id)
-        if not claw or not claw.http_base_url:
-            raise ValueError("No running claw instance found")
-        if claw.status != ClawStatus.RUNNING:
-            raise ValueError(f"Claw is not running (status: {claw.status})")
-        return await self.claw_client.get_file(claw.http_base_url, filename)
+    async def get_file(self, user_id: str, session_id: str, filename: str) -> tuple[bytes, str]:
+        session = await self.get_session(user_id, session_id)
+        if not session or not session.http_base_url:
+            raise ValueError("No running claw session found")
+        if session.status != ClawStatus.RUNNING:
+            raise ValueError(f"Claw session is not running (status: {session.status})")
+        return await self.claw_client.get_file(session.http_base_url, filename)
+
+    # ------------------------------------------------------------------
+    # Operator Terminal
+    # ------------------------------------------------------------------
+
+    async def open_terminal(
+        self, user_id: str, session_id: str, cols: int = 80, rows: int = 24,
+    ) -> tuple[str, str]:
+        """Open a new PTY on the claw instance and return
+        ``(terminal_ws_url, terminal_session_id)``.
+
+        Mirrors ``get_file``/``validate_session_for_chat``'s two-part check:
+        a session can retain a stale ``container_ip`` after ``_check_expiry``
+        marks it STOPPED on a failed health check, since only the
+        expiry-timeout branch clears ``container_ip`` — so the status check
+        below is required, not redundant with the base-url checks. Raises
+        ``ValueError`` if the session is missing/not owned/not running,
+        propagates whatever the plugin's ``/terminal/open`` call raises
+        (e.g. ``httpx.HTTPStatusError`` on a 502/503 from the plugin — see
+        Task 5's report for those error shapes) otherwise.
+        """
+        session = await self.get_session(user_id, session_id)
+        if not session or not session.http_base_url or not session.terminal_ws_base_url:
+            raise ValueError("No running claw session found")
+        if session.status != ClawStatus.RUNNING:
+            raise ValueError(f"Claw session is not running (status: {session.status})")
+
+        result = await self.claw_client.open_terminal(session.http_base_url, cols, rows)
+        terminal_session_id = result.get("session_id")
+        if not terminal_session_id:
+            raise ValueError("Claw terminal open did not return a session_id")
+        return f"{session.terminal_ws_base_url}/terminal/{terminal_session_id}", terminal_session_id
 
     # ------------------------------------------------------------------
     # Auth
@@ -348,11 +477,12 @@ class ClawDomainService:
         """Verify a claw API key and return the associated user ID.
 
         ``system_api_key`` is an optional global key (from settings) that
-        bypasses per-user lookup and returns a fixed service account ID.
+        bypasses per-session lookup and returns a fixed service account ID
+        (used by the dev-mode fixed/shared container).
         """
         if system_api_key and api_key == system_api_key:
             return "claw-service-account"
-        claw = await self.get_claw_by_api_key(api_key)
-        if claw:
-            return claw.user_id
+        session = await self.claw_repository.get_by_api_key(api_key)
+        if session:
+            return session.user_id
         return None
