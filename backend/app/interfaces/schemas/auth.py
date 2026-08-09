@@ -192,6 +192,7 @@ class RegisterResponse(BaseModel):
 class AuthStatusResponse(BaseModel):
     """Authentication status response schema"""
     auth_provider: str
+    authenticated: bool
 
 
 class RefreshTokenResponse(BaseModel):

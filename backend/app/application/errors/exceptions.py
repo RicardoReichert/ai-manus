@@ -33,4 +33,12 @@ class ServerError(AppException):
 
 class UnauthorizedError(AppException):
     def __init__(self, msg: str = "Authentication required"):
-        super().__init__(code=401, msg=msg, status_code=401) 
+        super().__init__(code=401, msg=msg, status_code=401)
+
+
+class ForbiddenError(AppException):
+    """The caller is authenticated but lacks permission for this action
+    (e.g. a non-admin user hitting an admin-only route) — distinct from
+    UnauthorizedError, which means not authenticated at all."""
+    def __init__(self, msg: str = "Permission denied"):
+        super().__init__(code=403, msg=msg, status_code=403)

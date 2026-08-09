@@ -9,9 +9,9 @@ from app.application.services.file_service import FileService
 from fastapi.responses import StreamingResponse
 from app.application.services.email_service import EmailService
 from app.application.errors.exceptions import (
-    UnauthorizedError, NotFoundError, BadRequestError
+    UnauthorizedError, ForbiddenError, NotFoundError, BadRequestError
 )
-from app.interfaces.dependencies import get_auth_service, get_current_user, get_email_service, get_file_service
+from app.interfaces.dependencies import get_auth_service, get_current_user, get_optional_current_user, get_email_service, get_file_service
 from app.interfaces.schemas.base import APIResponse
 from app.interfaces.schemas.auth import (
     LoginRequest, RegisterRequest, ChangePasswordRequest, ChangeFullnameRequest, RefreshTokenRequest,
@@ -121,11 +121,13 @@ async def register(
 
 @router.get("/status", response_model=APIResponse[AuthStatusResponse])
 async def get_auth_status(
+    current_user: Optional[User] = Depends(get_optional_current_user),
     auth_service: AuthService = Depends(get_auth_service)
 ) -> APIResponse[AuthStatusResponse]:
     settings = get_settings()
     return APIResponse.success(AuthStatusResponse(
-        auth_provider=settings.auth_provider
+        auth_provider=settings.auth_provider,
+        authenticated=current_user is not None,
     ))
 
 
@@ -237,7 +239,7 @@ async def get_user(
     auth_service: AuthService = Depends(get_auth_service)
 ) -> APIResponse[UserResponse]:
     if current_user.role != "admin":
-        raise UnauthorizedError("Admin access required")
+        raise ForbiddenError("Admin access required")
     user = await auth_service.get_user_by_id(user_id)
     if not user:
         raise NotFoundError("User not found")
@@ -251,7 +253,7 @@ async def deactivate_user(
     auth_service: AuthService = Depends(get_auth_service)
 ) -> APIResponse[dict]:
     if current_user.role != "admin":
-        raise UnauthorizedError("Admin access required")
+        raise ForbiddenError("Admin access required")
     if current_user.id == user_id:
         raise BadRequestError("Cannot deactivate your own account")
     await auth_service.deactivate_user(user_id)
@@ -265,7 +267,7 @@ async def activate_user(
     auth_service: AuthService = Depends(get_auth_service)
 ) -> APIResponse[dict]:
     if current_user.role != "admin":
-        raise UnauthorizedError("Admin access required")
+        raise ForbiddenError("Admin access required")
     await auth_service.activate_user(user_id)
     return APIResponse.success({})
 
@@ -321,7 +323,7 @@ async def logout(
     if token:
         await auth_service.logout(token)
     _clear_session_cookie(response)
-    return APIResponse.success({})
+    return APIResponse.success({"message": "Logout successful"})
 
 
 @router.post("/logout-all", response_model=APIResponse[dict])
