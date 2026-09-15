@@ -13,6 +13,7 @@ class SearchToolkit(BaseToolkit):
 - Visit multiple result URLs for comprehensive information or cross-validation
 - Search step by step: query attributes of a single entity separately, handle entities one by one
 - Authoritative web information takes priority over internal model knowledge
+- For topics with a social or community angle, official sources alone may miss how the events are actually perceived locally — informal sources (forums, blogs, social media, video platforms) are worth checking too
 """
     
     def __init__(self, search_engine: SearchEngine):

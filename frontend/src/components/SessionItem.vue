@@ -146,7 +146,7 @@
 </template>
 
 <script setup lang="ts">
-import { Ellipsis, FileText, Trash, Share2, Pencil, Star, ExternalLink, FolderPlus, Folder, FolderSync, Pin } from 'lucide-vue-next';
+import { Ellipsis, FileText, Trash, Share2, Pencil, Star, ExternalLink, FolderPlus, Folder, FolderSync, Pin, Archive as ArchiveIcon } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
@@ -160,6 +160,7 @@ import {
   favoriteSession,
   unfavoriteSession,
   pinSession,
+  archiveSession,
   moveSessionProject,
 } from '../api/agent';
 import { createProject } from '../api/project';
@@ -196,6 +197,7 @@ const emit = defineEmits<{
   (e: 'favorited', sessionId: string, isFavorite: boolean): void
   (e: 'pinned', sessionId: string, isPinned: boolean): void
   (e: 'moved', sessionId: string, projectId: string | null): void
+  (e: 'archived', sessionId: string, isArchived: boolean): void
 }>();
 
 const currentSessionId = computed(() => route.params.sessionId as string);
@@ -266,6 +268,7 @@ const handleSessionMenuClick = (event: MouseEvent) => {
   items.push(createSeparator());
   items.push(createMenuItem('pin', pinnedNow ? t('Unpin') : t('Pin'), { icon: Pin }));
   items.push(createMenuItem('favorite', favoritedNow ? t('Unfavorite') : t('Add to favorites'), { icon: Star }));
+  items.push(createMenuItem('archive', t('Archive task'), { icon: ArchiveIcon }));
   items.push(createDangerMenuItem('delete', t('Delete'), { icon: Trash }));
 
   showContextMenu(props.session.session_id, target, items, async (itemKey: string) => {
@@ -317,6 +320,17 @@ const handleSessionMenuClick = (event: MouseEvent) => {
         showSuccessToast(result.is_favorite ? t('Added to favorite') : t('Removed from favorite'));
       } catch {
         showErrorToast(t('Failed to update favorite'));
+      }
+    } else if (itemKey === 'archive') {
+      try {
+        const result = await archiveSession(props.session.session_id);
+        emit('archived', props.session.session_id, result.is_archived);
+        showSuccessToast(t('Task archived'));
+        if (isCurrentSession.value) {
+          router.push('/');
+        }
+      } catch {
+        showErrorToast(t('Failed to archive task'));
       }
     } else if (itemKey === 'open') {
       window.open(`/chat/${props.session.session_id}`, '_blank');

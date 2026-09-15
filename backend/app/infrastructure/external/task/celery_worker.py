@@ -93,6 +93,7 @@ async def _ensure_initialized() -> None:
         FileFavoriteDocument,
         SkillDocument,
         UserSkillDocument,
+        ModelConfigDocument,
     )
 
     settings = get_settings()
@@ -107,6 +108,7 @@ async def _ensure_initialized() -> None:
             FileFavoriteDocument,
             SkillDocument,
             UserSkillDocument,
+            ModelConfigDocument,
         ],
     )
     await get_redis().initialize()

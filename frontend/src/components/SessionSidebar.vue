@@ -183,7 +183,8 @@
                       @shared="handleSessionShared"
                       @favorited="handleSessionFavorited"
                       @pinned="handleSessionPinned"
-                      @moved="handleSessionMoved" />
+                      @moved="handleSessionMoved"
+                      @archived="handleSessionArchived" />
                     <div
                       v-if="sessionsForProject(project.project_id).length === 0"
                       class="flex items-center ps-[36px] pe-[8px] h-[36px]">
@@ -295,7 +296,8 @@
                       @shared="handleSessionShared"
                       @favorited="handleSessionFavorited"
                       @pinned="handleSessionPinned"
-                      @moved="handleSessionMoved" />
+                      @moved="handleSessionMoved"
+                      @archived="handleSessionArchived" />
                     <div
                       v-if="sessionsForProject(project.project_id).length === 0"
                       class="flex items-center ps-[36px] pe-[8px] h-[36px]">
@@ -357,7 +359,8 @@
                   @shared="handleSessionShared"
                   @favorited="handleSessionFavorited"
                   @pinned="handleSessionPinned"
-                  @moved="handleSessionMoved" />
+                  @moved="handleSessionMoved"
+                  @archived="handleSessionArchived" />
               </div>
               <div v-else class="flex flex-col items-center justify-center gap-4 py-8">
                 <div class="flex flex-col items-center gap-2 text-[var(--text-tertiary)]">
@@ -394,11 +397,7 @@
               class="flex min-w-0 ps-[2px] items-center gap-[8px] clickable cursor-pointer hover:opacity-70 p-[2px] text-[var(--text-primary)] text-sm font-[500]"
               aria-expanded="false" aria-haspopup="dialog">
               <div class="relative flex items-center justify-center font-bold cursor-pointer flex-shrink-0">
-                <div
-                  class="relative flex items-center justify-center font-bold flex-shrink-0 rounded-full overflow-hidden"
-                  style="width: 28px; height: 28px; font-size: 14px; color: rgba(255, 255, 255, 0.9); background-color: rgb(59, 130, 246);">
-                  {{ avatarLetter }}
-                </div>
+                <UserAvatar :avatar-url="currentUser?.avatar_url" :fallback-letter="avatarLetter" :size="28" />
               </div>
               <span v-if="isSessionSidebarShow" class="truncate">
                 {{ currentUser?.fullname || t('Unknown User') }}
@@ -426,10 +425,12 @@ import {
 import SessionItem from './SessionItem.vue';
 import UserMenu from './UserMenu.vue';
 import SearchDialog from './SearchDialog.vue';
+import UserAvatar from './UserAvatar.vue';
 import ManusLogoTextIcon from './icons/ManusLogoTextIcon.vue';
 import { useSessionSidebar } from '../composables/useSessionSidebar';
 import { useAuth } from '../composables/useAuth';
 import { useDialog } from '../composables/useDialog';
+import { useShortcuts } from '../composables/useShortcuts';
 import { useContextMenu, createMenuItem, createDangerMenuItem } from '../composables/useContextMenu';
 import { ref, computed, onMounted, watch, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -455,6 +456,14 @@ const cancelSessionsListWS = ref<(() => void) | null>(null)
 
 const upsertSessionItem = (item: ListSessionItem) => {
   const rest = sessions.value.filter(s => s.session_id !== item.session_id)
+  // The upsert push (unlike the initial snapshot / GET /sessions) isn't
+  // filtered server-side — an item that got archived elsewhere (another
+  // tab, the ChatPage "..." menu) would otherwise reappear here the moment
+  // its WS upsert arrives. Drop it instead, same as an explicit removal.
+  if (item.is_archived) {
+    sessions.value = rest
+    return
+  }
   const next = [...rest, item]
   next.sort((a, b) => (b.latest_message_at ?? 0) - (a.latest_message_at ?? 0))
   sessions.value = next
@@ -509,8 +518,8 @@ const { currentUser } = useAuth()
 const showUserMenu = ref(false)
 const profileRef = ref<HTMLElement | null>(null)
 
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
-const newTaskShortcut = computed(() => (isMac ? '⌘K' : 'Ctrl K'))
+const { bindings: shortcutBindings, matches: matchesShortcut, formatBinding } = useShortcuts()
+const newTaskShortcut = computed(() => formatBinding(shortcutBindings.value['new-task']).join(' '))
 
 const avatarLetter = computed(() => {
   return currentUser.value?.fullname?.charAt(0)?.toUpperCase() || 'M'
@@ -774,8 +783,13 @@ const handleSessionMoved = (sessionId: string, projectId: string | null) => {
   }
 }
 
+const handleSessionArchived = (sessionId: string, _isArchived: boolean) => {
+  // Default sidebar view excludes archived sessions — same removal as delete.
+  sessions.value = sessions.value.filter(session => session.session_id !== sessionId)
+}
+
 const handleKeydown = (event: KeyboardEvent) => {
-  if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+  if (matchesShortcut('new-task', event)) {
     event.preventDefault()
     handleNewTaskClick()
   }

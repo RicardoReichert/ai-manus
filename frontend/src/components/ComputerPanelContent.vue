@@ -223,6 +223,7 @@ import {
   SkipBack, SkipForward,
 } from 'lucide-vue-next';
 import type { ToolContent } from '@/types/message';
+import { localeToIntlTag } from '@/utils/time';
 import type { PlanEventData } from '@/types/event';
 import { useToolInfo } from '@/composables/useTool';
 import PlanPanel from './PlanPanel.vue';
@@ -288,7 +289,7 @@ const useComputerTitle = computed(() => t("Use {product}'s computer", { product:
 const hoverTimeLabel = computed(() => {
   const d = new Date(hoverTs.value * 1000);
   try {
-    return new Intl.DateTimeFormat(locale.value === 'zh' ? 'zh-CN' : 'en-US', {
+    return new Intl.DateTimeFormat(localeToIntlTag(locale.value), {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',

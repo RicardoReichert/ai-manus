@@ -17,6 +17,8 @@ export interface MessageContent extends BaseContent {
   attachments?: FileInfo[];
   /** Skill chips for this user turn (chat-detail icon card). */
   required_skills?: { id: string; name: string }[];
+  /** Only set on the final assistant message (TAREFA 5.2). */
+  follow_ups?: string[] | null;
 }
 
 export interface ToolContent extends BaseContent {

@@ -9,6 +9,14 @@ class ShellViewRequest(BaseModel):
     session_id: str
 
 
+class CreateSessionRequest(BaseModel):
+    """Create session request schema"""
+    project_id: Optional[str] = None
+    task_mode: Optional[TaskMode] = TaskMode.AGENT
+    model_name: Optional[str] = None
+    model_provider: Optional[str] = None
+
+
 class CreateSessionResponse(BaseModel):
     """Create session response schema"""
     session_id: str
@@ -23,8 +31,11 @@ class GetSessionResponse(BaseModel):
     is_shared: bool = False
     is_favorite: bool = False
     is_pinned: bool = False
+    is_archived: bool = False
     project_id: Optional[str] = None
     task_mode: TaskMode = TaskMode.AGENT
+    model_name: Optional[str] = None
+    model_provider: Optional[str] = None
 
 
 class ListSessionItem(BaseModel):
@@ -38,8 +49,11 @@ class ListSessionItem(BaseModel):
     is_shared: bool = False
     is_favorite: bool = False
     is_pinned: bool = False
+    is_archived: bool = False
     project_id: Optional[str] = None
     task_mode: TaskMode = TaskMode.AGENT
+    model_name: Optional[str] = None
+    model_provider: Optional[str] = None
 
     @staticmethod
     def from_domain(summary: SessionSummary) -> 'ListSessionItem':
@@ -53,8 +67,11 @@ class ListSessionItem(BaseModel):
             is_shared=summary.is_shared,
             is_favorite=summary.is_favorite,
             is_pinned=summary.is_pinned,
+            is_archived=summary.is_archived,
             project_id=summary.project_id,
             task_mode=summary.task_mode or TaskMode.AGENT,
+            model_name=summary.model_name,
+            model_provider=summary.model_provider,
         )
 
 
@@ -105,6 +122,33 @@ class PinSessionResponse(BaseModel):
     is_pinned: bool
 
 
+class ArchiveSessionResponse(BaseModel):
+    """Archive session response schema"""
+    session_id: str
+    is_archived: bool
+
+
+class RatingRequest(BaseModel):
+    """Rate a session 1-5, or null to clear the rating"""
+    rating: Optional[int] = None
+
+
+class RatingResponse(BaseModel):
+    session_id: str
+    rating: Optional[int] = None
+
+
+class SessionUsageResponse(BaseModel):
+    """Non-financial usage metrics for a task (TAREFA 4.1) — deliberately no credits."""
+    session_id: str
+    worked_ms: int
+    pages_viewed: int
+    commands_run: int
+    api_calls: int
+    files_created: int
+    rating: Optional[int] = None
+
+
 class FavoriteLibraryFileResponse(BaseModel):
     """Favorite library file response schema"""
     file_id: str
@@ -129,6 +173,18 @@ class UpdateSessionTaskModeRequest(BaseModel):
 class UpdateSessionTaskModeResponse(BaseModel):
     session_id: str
     task_mode: TaskMode
+
+
+class UpdateSessionModelRequest(BaseModel):
+    """Update session active model and provider"""
+    model_name: str
+    model_provider: Optional[str] = None
+
+
+class UpdateSessionModelResponse(BaseModel):
+    session_id: str
+    model_name: str
+    model_provider: Optional[str] = None
 
 
 class LibraryFileItem(BaseModel):

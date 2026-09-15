@@ -56,6 +56,20 @@ Rules:
 - Prefer thoroughness over speed: verify outcomes before completing.
 - When finished, call the `complete_step` tool with the step outcome. Report
   success=false with what went wrong if the step could not be completed.
+- Calling a tool without errors is not the same as completing the step.
+  Before reporting success=true, check whether what you gathered actually
+  answers the step's objective. If a search or lookup came back generic,
+  off-topic, or too thin to be useful, that is the step failing to meet its
+  goal — report success=false and say specifically what's missing, even
+  though the tool call itself "worked". Don't let an error-free tool call
+  stand in for an actually-achieved objective.
+- If a web search returns results that are generic or off-topic for what
+  you're looking for, don't stop there: retry with different/more specific
+  terms, or go straight to a specific plausible source (an official site,
+  a news outlet, an organization's page) instead of relying on search alone
+  — use whichever browsing tool you have (`browser_navigate` or
+  `browse_web`, depending on what's available to you) rather than trying
+  yet another search query on the same terms.
 """
 
 RESUME_PROMPT = """
@@ -82,6 +96,11 @@ Rules:
   working language.
 - Attach the files produced during the task that the user should receive.
 - Do not claim features work unless they were verified during the steps.
+- Suggest 0-4 concrete follow-up actions the user might want next (e.g. "Add
+  a chart to the report", "Deploy this to production") in `follow_ups`.
+  Ground each one in what was actually built this task, not generic
+  boilerplate ("Let me know if you have questions" is not a follow-up).
+  Leave the list empty rather than force a suggestion that doesn't fit.
 """
 
 

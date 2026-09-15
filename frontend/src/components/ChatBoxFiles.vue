@@ -73,7 +73,7 @@
                                         :size="14" />
                                 </div>
                                 <div v-else-if="file.status === 'uploading'">{{ t('Uploading...') }}</div>
-                                <div v-else>{{ getFileTypeText(file.filename) }} · {{ formatFileSize(file.size) }}</div>
+                                <div v-else>{{ getFileTypeText(file.filename) }}<template v-if="formatFileSize(file.size)"> · {{ formatFileSize(file.size) }}</template></div>
                             </div>
                         </div>
                     </div>

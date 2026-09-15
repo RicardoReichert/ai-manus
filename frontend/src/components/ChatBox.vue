@@ -22,10 +22,14 @@
           <ChatBoxPlusMenu
             :open="showPlusMenu"
             :position-style="plusMenuPositionStyle"
+            :show-plan-item="props.hasPlanPanel"
             @add-local-files="runAddLocalFiles"
             @select-skill="insertSkillTag"
             @add-skill="handlePlusAddSkill"
             @manage-skills="handlePlusManageSkills"
+            @select-from-library="showLibraryPicker = true"
+            @select-recent-tasks="showRecentTasksPicker = true"
+            @open-plan="openPlanPanel"
             @close="showPlusMenu = false"
           />
         </div>
@@ -59,6 +63,16 @@
       test-id="chatbox-slash-menu"
       @select="handleSlashSelect"
     />
+    <LibraryPickerDialog
+      :visible="showLibraryPicker"
+      @close="showLibraryPicker = false"
+      @select="handleLibrarySelect"
+    />
+    <RecentTasksPickerDialog
+      :visible="showRecentTasksPicker"
+      @close="showRecentTasksPicker = false"
+      @select="handleRecentTaskSelect"
+    />
   </div>
 </template>
 
@@ -91,6 +105,10 @@ import type { PendingHomeDraft } from '@/composables/usePendingHomeMessage'
 import { Plus } from 'lucide-vue-next'
 import type { FileInfo } from '../api/file'
 import type { Range } from '@tiptap/core'
+import LibraryPickerDialog from './chatbox/LibraryPickerDialog.vue'
+import RecentTasksPickerDialog from './chatbox/RecentTasksPickerDialog.vue'
+import type { ListSessionItem } from '../types/response'
+import { eventBus, UI_OPEN_PLAN_PANEL } from '../utils/eventBus'
 
 const { t } = useI18n()
 const { slashSkills, launchSkillCreatorFlow } = useSkills()
@@ -105,6 +123,8 @@ const plusSkillDialogOpen = reactive<Record<(typeof plusSkillDialogVariants)[num
   github: false,
   official: false,
 })
+const showLibraryPicker = ref(false)
+const showRecentTasksPicker = ref(false)
 
 const slashMenuOpen = ref(false)
 const slashMenuItems = ref<SlashItem[]>([])
@@ -121,7 +141,7 @@ const plusMenuPositionStyle = {
 
 const props = withDefaults(defineProps<{
   modelValue: string
-  rows: number
+  rows?: number
   isRunning: boolean
   attachments: FileInfo[]
   hideStopButton?: boolean
@@ -129,11 +149,15 @@ const props = withDefaults(defineProps<{
   /** Manus session detail uses "Send message to Manus"; home keeps the task prompt. */
   placeholder?: string
   dense?: boolean
+  /** Whether a PlanPanel is mounted alongside this ChatBox to react to the
+   * "+" menu's Plan item / Ctrl+/ shortcut — see ALL_PLUS_MENU_ITEMS above. */
+  hasPlanPanel?: boolean
 }>(), {
   placeholder: undefined,
   dense: false,
   hideStopButton: false,
   allowSendFilesOnly: false,
+  hasPlanPanel: false,
 })
 
 const placeholderText = computed(() => props.placeholder || t('Assign a task or type / to see more'))
@@ -172,6 +196,12 @@ const runAddLocalFiles = () => {
   showPlusMenu.value = false
   slashMenuOpen.value = false
   uploadFile()
+}
+
+const openPlanPanel = () => {
+  showPlusMenu.value = false
+  slashMenuOpen.value = false
+  eventBus.emit(UI_OPEN_PLAN_PANEL)
 }
 
 const insertSkillTag = (skill: { id: string; name: string; description?: string; owner_type?: string }) => {
@@ -229,6 +259,22 @@ const handlePlusAddSkill = async (variant: SkillsPlaceholderVariant) => {
   plusSkillDialogOpen[variant] = true
 }
 
+const handleLibrarySelect = (file: FileInfo) => {
+  showLibraryPicker.value = false
+  // No 'status' field: ChatBoxFiles.vue only special-cases 'uploading'/'failed',
+  // so an already-uploaded FileInfo without a status renders as done.
+  emit('update:attachments', [...props.attachments, file])
+}
+
+const handleRecentTaskSelect = (session: ListSessionItem) => {
+  showRecentTasksPicker.value = false
+  const title = session.title || t('New Chat')
+  const reference = t('Regarding task "{title}": ', { title })
+  const current = props.modelValue ? `${props.modelValue} ` : ''
+  emit('update:modelValue', current + reference)
+  focus()
+}
+
 const handleSlashSelect = (item: SlashMenuItem) => {
   const full: SlashItem =
     slashMenuItems.value.find((i) => i.id === item.id) ??
@@ -283,7 +329,6 @@ const editor = useEditor({
       codeBlock: false,
       blockquote: false,
       horizontalRule: false,
-      // keep bold/italic/lists/hardBreak
     }),
     Placeholder.configure({ placeholder: () => placeholderText.value }),
     SkillTag,
@@ -294,7 +339,6 @@ const editor = useEditor({
         if (!open) {
           slashMenuItems.value = []
           slashCommand = null
-          // Keep slashRange until select/onStart so mouse click after blur can still delete `/`
         }
       },
       render: {
@@ -307,7 +351,6 @@ const editor = useEditor({
         onExit: () => {
           slashMenuItems.value = []
           slashCommand = null
-          // Keep slashRange for pending mouse click after focus steal
         },
         onKeyDown: ({ event }) => {
           if (!slashMenuOpen.value || slashMenuItems.value.length === 0) return false
@@ -361,6 +404,11 @@ const editor = useEditor({
           return true
         }
       }
+      if (props.hasPlanPanel && event.key === '/' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault()
+        openPlanPanel()
+        return true
+      }
       return false
     },
   },
@@ -384,19 +432,21 @@ watch(() => props.modelValue, (val) => {
   syncModelToEditor(val ?? '')
 })
 
-// Retry inbound sync once the editor becomes ready (missed early modelValue).
 watch(editor, (ed) => {
   if (ed) syncModelToEditor(props.modelValue ?? '')
 })
 
 watch(placeholderText, () => {
-  // Placeholder extension reads function; force view update if needed
   if (editor.value?.view) {
     editor.value.view.dispatch(editor.value.state.tr)
   }
 })
 
 onBeforeUnmount(() => editor.value?.destroy())
+
+const focus = () => {
+  editor.value?.commands.focus()
+}
 
 /** Seed TipTap with text + skillTag chip (official Create Skill with Manus draft). */
 const seedDraft = (draft: PendingHomeDraft) => {
@@ -428,7 +478,7 @@ const seedDraft = (draft: PendingHomeDraft) => {
   emit('update:modelValue', text)
 }
 
-defineExpose({ editor, seedDraft })
+defineExpose({ editor, seedDraft, focus })
 
 const onDocClick = (e: MouseEvent) => {
   if (showPlusMenu.value && plusMenuRef.value && !plusMenuRef.value.contains(e.target as Node)) {
@@ -439,7 +489,6 @@ const onDocClick = (e: MouseEvent) => {
 onMounted(() => document.addEventListener('mousedown', onDocClick))
 onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
 
-// Sync initial hasTextInput from modelValue
 hasTextInput.value = !!props.modelValue.trim()
 </script>
 

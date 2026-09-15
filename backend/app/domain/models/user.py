@@ -15,6 +15,7 @@ class User(BaseModel):
     fullname: str
     email: str  # Now required field for login
     password_hash: Optional[str] = None
+    avatar_file_id: Optional[str] = None
     role: UserRole = UserRole.USER
     is_active: bool = True
     created_at: datetime = datetime.now(UTC)

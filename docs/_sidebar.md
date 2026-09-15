@@ -6,6 +6,7 @@
    * [✨ 场景演示](demo.md)
    * [🧩 Skills 技能](skills.md)
    * [🔧 MCP 配置](mcp.md)
+   * [📋 Backlog: Paridade com Manus.im](backlog/paridade-manus.md)
  * [📋 配置说明](configuration.md)
  * 👨‍💻 开发指南
    * [⚙️ 系统架构](architecture.md)

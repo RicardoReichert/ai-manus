@@ -7,6 +7,7 @@ from urllib.parse import urlparse, parse_qs
 from bs4 import BeautifulSoup
 from curl_cffi.requests import AsyncSession
 
+from app.core.config import get_settings
 from app.domain.external.search import SearchEngine
 from app.domain.models.search import SearchResultItem, SearchResults
 from app.domain.models.tool_result import ToolResult
@@ -35,6 +36,7 @@ class BingWebSearchEngine(SearchEngine):
 
     def __init__(self):
         self.base_url = "https://www.bing.com/search"
+        self.market = get_settings().search_market
 
     async def search(
         self,
@@ -54,6 +56,14 @@ class BingWebSearchEngine(SearchEngine):
             "q": query,
             "count": "20",
         }
+        # Without a market/language signal, Bing has no idea what language
+        # the query is in and can fall back to matching only the one word
+        # it recognizes confidently — observed live: a 7-word Portuguese
+        # query returned only Portuguese *dictionary definitions* of one
+        # common word in it, ignoring the rest of the query entirely.
+        if self.market:
+            params["mkt"] = self.market
+        headers = {"Accept-Language": self.market} if self.market else {}
 
         if date_range and date_range != "all":
             freshness_filters = {
@@ -70,7 +80,7 @@ class BingWebSearchEngine(SearchEngine):
         try:
             async with AsyncSession(impersonate="chrome") as session:
                 response = await session.get(
-                    self.base_url, params=params, timeout=30
+                    self.base_url, params=params, headers=headers, timeout=30
                 )
                 response.raise_for_status()
 

@@ -90,8 +90,15 @@ class PlannerAgent(BaseAgent):
                 yield event
 
     async def update_plan(self, plan: Plan, step: Step) -> AsyncGenerator[BaseEvent, None]:
-        request = UPDATE_PLAN_PROMPT.format(plan=plan.dump_json(), step=step.model_dump_json())
-        async for event in self.execute(request, output_tool=UPDATE_PLAN_TOOL):
+        request = UPDATE_PLAN_PROMPT.format(
+            plan=plan.dump_json(),
+            step=step.model_dump_json(exclude={"started_at", "finished_at"}),
+        )
+        # Tagged so Memory.compact() can elide every earlier plan-JSON dump
+        # once a newer one exists — each dump fully supersedes the last, so
+        # keeping only the latest is lossless and avoids the planner's
+        # memory growing quadratically with the number of completed steps.
+        async for event in self.execute(request, output_tool=UPDATE_PLAN_TOOL, request_tag="plan_dump"):
             if isinstance(event, StructuredOutputEvent):
                 output: PlanUpdateOutput = event.output
                 logger.debug(f"Planner updated plan: {output}")

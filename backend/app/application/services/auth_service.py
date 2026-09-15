@@ -408,6 +408,17 @@ class AuthService:
         logger.info(f"Fullname changed successfully for user: {user_id}")
         return updated_user
 
+    async def set_avatar(self, user_id: str, avatar_file_id: Optional[str]) -> User:
+        logger.info(f"Setting avatar for user: {user_id} -> {avatar_file_id}")
+        user = await self.user_repository.get_user_by_id(user_id)
+        if not user:
+            raise ValidationError("User not found")
+        user.avatar_file_id = avatar_file_id
+        user.updated_at = datetime.utcnow()
+        updated_user = await self.user_repository.update_user(user)
+        logger.info(f"Avatar set successfully for user: {user_id}")
+        return updated_user
+
     async def get_user_by_id(self, user_id: str) -> Optional[User]:
         return await self.user_repository.get_user_by_id(user_id)
 

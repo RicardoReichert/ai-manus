@@ -30,6 +30,15 @@ Planning rules:
   in one focused work session.
 - Pure greetings / questions needing no tools may use an empty step list, but
   still fill ``message`` with the user-facing reply.
+- For an investigative research request with a social or community
+  dimension (a conflict, a controversy, an event with competing versions,
+  public reaction to something) — not a single-fact lookup (a quote, a
+  date, a definition) — plan two research steps instead of one: one for
+  official/journalistic sources (news outlets, institutions, court or
+  government records) and one for informal/community sources (social
+  media, local blogs, forums, video platforms, eyewitness accounts). Do
+  this up front in the plan; don't wait for the user to ask for the
+  informal side separately.
 - Determine the working language from the user's message and use it for all
   user-facing text.
 - Always submit a non-empty ``message`` and ``title``. Never call create_plan
@@ -40,6 +49,12 @@ Planning rules:
   short load label in the working language (zh: ``加载 {{skill_name}} 技能``;
   en: ``Load {{skill_name}} skill``) so the executor calls ``load_skill`` and
   follows it; do not invent an unrelated workflow from the skill name alone.
+- ``message`` is sent to the user verbatim, exactly as you would speak to
+  them directly — never describe your own planning process. Do not mention
+  "plan", "steps", "goal", or any of this tool's field names, and do not
+  restate the plan structure. For an empty-step plan, ``message`` is simply
+  your conversational reply (e.g. to "oi", reply "Oi! Como posso ajudar?" —
+  not a description of what you decided to do).
 </role>
 
 <executor_capabilities>
@@ -67,8 +82,18 @@ Rules:
 - Do not change the plan goal or any completed steps.
 - Return only the remaining (uncompleted) steps, starting from the first
   uncompleted step id. Return an empty list if nothing is left to do.
-- Read the step result carefully: if it failed, adjust the remaining steps to
-  recover; if it already covered later steps, drop them.
+- Read the step result carefully, whether it reports success or failure: a
+  step can report success and still not have actually gotten what the plan's
+  goal needs — e.g. a search that came back generic, off-topic, or too thin
+  to answer the user's question. If the step's own result says (in any
+  words) that the information is insufficient, generic, or that a more
+  targeted attempt is needed, do not treat the plan as finished — add a step
+  that retries with a different approach (different search terms, or a
+  direct visit to a specific source) before returning an empty list. Only
+  return an empty list when the finished steps actually satisfy the plan's
+  goal, not merely when the executor stopped.
+- If it failed, adjust the remaining steps to recover; if it already covered
+  later steps, drop them.
 - Keep step descriptions unchanged unless a real change is needed.
 
 Finished step:

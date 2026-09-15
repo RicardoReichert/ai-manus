@@ -17,6 +17,11 @@
     </div>
 
     <div class="focus-visible:outline-none flex-1 min-h-0 h-full text-sm flex flex-col py-0 outline-none overflow-auto">
+      <ChatMessageCopyButton
+        v-if="activeView !== 'diff'"
+        :text="activeContent"
+        button-class="absolute top-2 end-2 z-10 bg-[var(--background-gray-main)]"
+      />
       <div v-if="activeView === 'diff' && hasOldContent" class="flex-1 min-h-0 h-full">
         <MonacoDiffEditor
           class="w-full h-full"
@@ -56,6 +61,7 @@ import MonacoDiffEditor from '@/components/ui/MonacoDiffEditor.vue';
 import { useLiveToolContent } from '@/composables/useLiveToolContent';
 import { useDocumentDark } from '@/composables/useDocumentDark';
 import { eventBus } from '@/utils/eventBus';
+import ChatMessageCopyButton from '@/components/ChatMessageCopyButton.vue';
 
 type FileTab = 'diff' | 'oldContent' | 'newContent';
 
@@ -92,6 +98,10 @@ const activeView = computed<FileTab>(() => {
   if (!hasOldContent.value) return 'newContent';
   return activeTab.value;
 });
+
+const activeContent = computed(() =>
+  activeView.value === 'oldContent' ? (oldContent.value || '') : fileContent.value
+);
 
 const filePath = computed(() => {
   if (props.toolContent && props.toolContent.args.file) {

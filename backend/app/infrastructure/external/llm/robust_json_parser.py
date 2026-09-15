@@ -6,6 +6,23 @@ using the | operator:
 
     chain = model_with_tools | RobustJsonParser.from_llm(llm)
 
+Stage 0 — text tool-call recovery: some small local models, when the
+runtime's chat template doesn't map their native tool-call format into the
+API's tool_calls channel, emit the call as plain text instead — the model
+picked the right tool and arguments, it just never touched the tool-call
+channel at all (so both ``tool_calls`` and ``invalid_tool_calls`` come back
+empty; this is a different failure from stages 1-3's malformed-JSON case).
+Recognized text shapes, in the order tried:
+
+  - ``<tool_call>{"name": ..., "arguments": {...}}</tool_call>``
+  - `` ```tool_name\\n{...}``` `` — a fenced block whose language/name slot
+    is the tool name and whose body is the raw arguments.
+  - `` ```json\\n{"name": ..., "arguments": {...}}``` `` — generic fenced form.
+
+A recovered call is only promoted when its name matches a tool the caller
+actually offered this turn (``known_tools``); an unrecognized name is left
+as plain text rather than guessed at.
+
 Repair stages applied in order when invalid_tool_calls are detected:
 
   Stage 1 — parse_partial_json   : repair truncated / incomplete JSON locally.
@@ -27,8 +44,10 @@ composable and stateless.  ToolCallParseError exposes a make_retry_context()
 helper to build the stage-5 context without duplicating the template.
 """
 import asyncio
+import json
 import logging
-from typing import Any, Optional
+import re
+from typing import Any, Optional, Sequence, Tuple
 
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models import BaseChatModel
@@ -40,6 +59,109 @@ from langchain_core.utils.json import parse_json_markdown, parse_partial_json
 from langchain_classic.output_parsers.fix import OutputFixingParser
 
 logger = logging.getLogger(__name__)
+
+# Stage 0 lead-ins: where a text-embedded tool call can start. Matched
+# case-sensitively on purpose — these are literal protocol tokens/fences,
+# not prose that happens to contain the words.
+_TOOL_CALL_TAG_START_RE = re.compile(r"<tool_call>\s*")
+_FENCE_START_RE = re.compile(r"```\s*([a-zA-Z_][a-zA-Z0-9_]*)?\s*")
+
+
+def _extract_balanced_json_object(text: str, start: int) -> Optional[str]:
+    """Return the first balanced ``{...}`` object starting at ``start``.
+
+    ``start`` must index a ``{``. Tolerates an object left unterminated at
+    end-of-string (a truncated generation) by returning everything from
+    ``start`` onward — the caller feeds that to ``parse_partial_json``,
+    which already handles truncated JSON elsewhere in this module.
+    """
+    if start >= len(text) or text[start] != "{":
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return text[start:]
+
+
+def _parse_json_object(raw: str) -> Optional[dict]:
+    """Strict parse first, falling back to the module's own tolerant parser
+    for a truncated object (see ``_extract_balanced_json_object``)."""
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    try:
+        parsed = parse_partial_json(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    return None
+
+
+def _extract_text_tool_call(text: str) -> Optional[Tuple[str, dict, str]]:
+    """Find a tool call embedded as text. Returns ``(name, args, matched)``,
+    where ``matched`` is the exact substring to remove from the message
+    content, or ``None`` if no recognizable shape is present."""
+    tag_match = _TOOL_CALL_TAG_START_RE.search(text)
+    if tag_match:
+        obj_text = _extract_balanced_json_object(text, tag_match.end())
+        if obj_text is not None:
+            payload = _parse_json_object(obj_text)
+            if isinstance(payload, dict):
+                name, args = payload.get("name"), payload.get("arguments")
+                if isinstance(name, str) and isinstance(args, dict):
+                    matched = text[tag_match.start() : tag_match.end() + len(obj_text)]
+                    # Absorb a trailing </tool_call> if present, so it isn't
+                    # left dangling in the remaining prose.
+                    tail = text[tag_match.end() + len(obj_text) :]
+                    close = re.match(r"\s*</tool_call>", tail)
+                    if close:
+                        matched += close.group(0)
+                    return name, args, matched
+
+    fence_match = _FENCE_START_RE.search(text)
+    if fence_match:
+        label = (fence_match.group(1) or "").strip()
+        obj_text = _extract_balanced_json_object(text, fence_match.end())
+        if obj_text is not None:
+            body = _parse_json_object(obj_text)
+            if isinstance(body, dict):
+                matched = text[fence_match.start() : fence_match.end() + len(obj_text)]
+                tail = text[fence_match.end() + len(obj_text) :]
+                close = re.match(r"\s*```", tail)
+                if close:
+                    matched += close.group(0)
+                if label and label != "json":
+                    # ```tool_name\n{...}``` — the fence's own label slot is
+                    # the tool name; the object is the raw arguments.
+                    return label, body, matched
+                # ```json\n{"name": ..., "arguments": {...}}``` — generic.
+                name, args = body.get("name"), body.get("arguments")
+                if isinstance(name, str) and isinstance(args, dict):
+                    return name, args, matched
+
+    return None
 
 _RETRY_WITH_ERROR_TEMPLATE = (
     "Your previous response contained invalid JSON in the tool call arguments.\n"
@@ -104,8 +226,13 @@ class RobustJsonParser(Runnable[AIMessage, AIMessage]):
     on top — e.g. via chain.with_retry() or a manual loop.
     """
 
-    def __init__(self, llm: BaseChatModel) -> None:
+    def __init__(self, llm: BaseChatModel, known_tools: Optional[Sequence[str]] = None) -> None:
         self._llm = llm
+        # Stage 0 only ever promotes a recovered call whose name is in this
+        # set — an unrecognized name is left as plain text rather than
+        # guessed at. None/empty disables stage 0 entirely (e.g. a call with
+        # no tools bound has nothing to recover into).
+        self._known_tools = set(known_tools) if known_tools else None
         # Stage 3: OutputFixingParser wraps JsonOutputParser.
         # JsonOutputParser validates the fixed string is well-formed JSON;
         # OutputFixingParser drives one LLM repair call on failure.
@@ -116,16 +243,18 @@ class RobustJsonParser(Runnable[AIMessage, AIMessage]):
         )
 
     @classmethod
-    def from_llm(cls, llm: BaseChatModel) -> "RobustJsonParser":
+    def from_llm(cls, llm: BaseChatModel, known_tools: Optional[Sequence[str]] = None) -> "RobustJsonParser":
         """Create a RobustJsonParser from a chat model.
 
         Args:
             llm: Chat model used for Stage 3 (OutputFixingParser) repair.
+            known_tools: Tool names offered this turn, used to validate a
+                stage-0 text-recovered call's name before promoting it.
 
         Returns:
             A RobustJsonParser instance ready for use in a chain.
         """
-        return cls(llm=llm)
+        return cls(llm=llm, known_tools=known_tools)
 
     # ------------------------------------------------------------------
     # Stage 1: parse_partial_json
@@ -214,6 +343,49 @@ class RobustJsonParser(Runnable[AIMessage, AIMessage]):
             }
         )
 
+    # ------------------------------------------------------------------
+    # Stage 0: text tool-call recovery
+    # ------------------------------------------------------------------
+
+    def _recover_tool_call_from_text(self, message: AIMessage) -> Optional[AIMessage]:
+        """Recover a tool call the model emitted as text instead of using
+        the native tool-call channel at all — see the module docstring.
+
+        Only runs when there is nothing else to work with (no native and no
+        malformed tool call already present), and only promotes a candidate
+        whose name is a real, currently-offered tool.
+        """
+        if message.tool_calls or message.invalid_tool_calls:
+            return None
+        if not self._known_tools:
+            return None
+        content = message.content
+        if not isinstance(content, str) or not content.strip():
+            return None
+
+        candidate = _extract_text_tool_call(content)
+        if candidate is None:
+            return None
+        name, args, matched = candidate
+        if name not in self._known_tools:
+            logger.debug(
+                "Text-embedded tool call named '%s' is not a known tool this turn; leaving as text",
+                name,
+            )
+            return None
+
+        logger.info(
+            "Recovered tool call '%s' that the model emitted as text instead of a native tool_call",
+            name,
+        )
+        remaining = content.replace(matched, "", 1).strip()
+        return message.model_copy(
+            update={
+                "content": remaining,
+                "tool_calls": [create_tool_call(name=name, args=args, id=None)],
+            }
+        )
+
     def _collect_errors(self, message: AIMessage) -> list[str]:
         return [
             f"Tool '{itc.get('name', 'unknown')}': "
@@ -258,7 +430,8 @@ class RobustJsonParser(Runnable[AIMessage, AIMessage]):
                 AIMessage and per-call error details for the caller to use in
                 stage-4/5 model retries.
         """
-        message = await self._repair_invalid_tool_calls(input)
+        recovered = self._recover_tool_call_from_text(input)
+        message = await self._repair_invalid_tool_calls(recovered if recovered is not None else input)
 
         if message.invalid_tool_calls:
             errors = self._collect_errors(message)

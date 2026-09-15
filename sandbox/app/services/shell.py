@@ -76,6 +76,24 @@ class ShellDeadError(Exception):
     pass
 
 
+# Hard ceiling on accumulated shell output per session/console record.
+# Without this, a long-running or highly verbose command grows these
+# strings without bound — the backend agent's own truncation
+# (max_tool_result_chars) only trims what it receives per request, it can't
+# undo an already-multi-MB transfer over the wire. Keeping the most recent
+# output (not the oldest) matches how a live terminal scrollback behaves,
+# and is what matters for a still-running command's current state.
+MAX_SHELL_OUTPUT_CHARS = 200_000
+
+
+def _append_bounded(existing: str, new: str, limit: int = MAX_SHELL_OUTPUT_CHARS) -> str:
+    """Append ``new`` to ``existing``, keeping at most the last ``limit`` chars."""
+    combined = existing + new
+    if len(combined) <= limit:
+        return combined
+    return combined[-limit:]
+
+
 class ShellService:
     # Store active shell sessions
     active_shells: Dict[str, Dict[str, Any]] = {}
@@ -257,6 +275,8 @@ class ShellService:
             raw = content[start:]
 
         output = self._remove_ansi_escape_codes(self._extract_output(raw, cur["sent_text"]))
+        if len(output) > MAX_SHELL_OUTPUT_CHARS:
+            output = output[-MAX_SHELL_OUTPUT_CHARS:]
         cur["output"] = output
         if shell["console"]:
             shell["console"][-1].output = output

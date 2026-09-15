@@ -48,16 +48,16 @@
           </div>
         </li>
 
-        <template v-for="group in groupedSessions" :key="group.label">
+        <template v-for="group in groupedRows" :key="group.label">
           <li class="flex px-2.5 pb-1.5 font-medium text-[var(--text-tertiary)] !px-5 !pb-2 !pt-3 text-[13px]">
             {{ group.label }}
           </li>
           <li
-            v-for="(session, idx) in group.items"
-            :key="session.session_id"
+            v-for="(row, idx) in group.items"
+            :key="row.rowKey"
             class="mx-2 flex items-center gap-4 rounded-lg px-3 py-2 text-[var(--text-primary)] clickable cursor-pointer hover:bg-[var(--fill-tsp-white-light)]"
             :class="flatIndex(group, idx) === highlightIndex ? 'bg-[var(--fill-tsp-white-light)]' : ''"
-            @click="openSession(session.session_id)"
+            @click="openSession(row.session_id)"
             @mouseenter="highlightIndex = flatIndex(group, idx)">
             <div class="relative h-[18px] w-[18px] shrink-0 flex items-center justify-center">
               <FileText :size="18" class="text-[var(--icon-tertiary)]" />
@@ -66,26 +66,29 @@
               <div class="flex w-full items-center gap-2.5">
                 <div class="flex min-w-0 flex-1 items-center gap-1.5">
                   <span class="block min-w-0 truncate text-sm font-normal text-[var(--text-primary)]">
-                    {{ session.title || t('New Chat') }}
+                    {{ row.title }}
                   </span>
                 </div>
                 <div
-                  v-if="session.latest_message_at"
+                  v-if="row.timestamp"
                   class="shrink-0 overflow-hidden truncate whitespace-nowrap text-end text-xs font-normal text-[var(--text-tertiary)]">
-                  {{ formatTime(session.latest_message_at) }}
+                  {{ formatTime(row.timestamp) }}
                 </div>
               </div>
               <span
-                v-if="session.latest_message"
+                v-if="row.preview"
                 class="block truncate text-xs font-normal text-[var(--text-tertiary)]">
-                {{ session.latest_message }}
+                {{ row.preview }}
               </span>
             </div>
           </li>
         </template>
 
+        <li v-if="query.trim() && searching" class="px-5 py-8 text-center text-sm text-[var(--text-tertiary)]">
+          {{ t('Loading...') }}
+        </li>
         <li
-          v-if="query.trim() && flatSessions.length === 0"
+          v-else-if="query.trim() && !searching && rows.length === 0"
           class="px-5 py-8 text-center text-sm text-[var(--text-tertiary)]">
           {{ t('No matching tasks') }}
         </li>
@@ -96,10 +99,12 @@
 
 <script setup lang="ts">
 import { FileText, Search, SquarePen, X } from 'lucide-vue-next';
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { ListSessionItem } from '@/types/response';
+import { localeToIntlTag } from '@/utils/time';
+import { searchMessages, type SearchResultItem } from '@/api/search';
 
 const props = defineProps<{
   visible: boolean;
@@ -116,21 +121,47 @@ const router = useRouter();
 const inputRef = ref<HTMLInputElement | null>(null);
 const query = ref('');
 const highlightIndex = ref(-1);
+const searchResults = ref<SearchResultItem[] | null>(null);
+const searching = ref(false);
 
-const flatSessions = computed(() => {
-  const q = query.value.trim().toLowerCase();
-  let list = [...props.sessions].sort((a, b) => (b.latest_message_at || 0) - (a.latest_message_at || 0));
-  if (q) {
-    list = list.filter((s) => {
-      const title = (s.title || '').toLowerCase();
-      const msg = (s.latest_message || '').toLowerCase();
-      return title.includes(q) || msg.includes(q);
-    });
+interface Row {
+  session_id: string;
+  title: string;
+  preview: string;
+  timestamp: number | null;
+  rowKey: string;
+}
+
+/**
+ * Blank query: browse mode — every session (already loaded in the sidebar),
+ * newest first, same as before this task.
+ * Non-blank query: server-side full-message search (16.1) — one row per
+ * matching message, so the same task can legitimately appear more than once
+ * with a different snippet.
+ */
+const rows = computed((): Row[] => {
+  const q = query.value.trim();
+  if (!q) {
+    return [...props.sessions]
+      .sort((a, b) => (b.latest_message_at || 0) - (a.latest_message_at || 0))
+      .map((s) => ({
+        session_id: s.session_id,
+        title: s.title || t('New Chat'),
+        preview: s.latest_message || '',
+        timestamp: s.latest_message_at ?? null,
+        rowKey: s.session_id,
+      }));
   }
-  return list;
+  return (searchResults.value || []).map((r, idx) => ({
+    session_id: r.session_id,
+    title: r.session_title || t('New Chat'),
+    preview: r.snippet,
+    timestamp: r.message_at,
+    rowKey: `${r.session_id}-${idx}-${r.message_at ?? 0}`,
+  }));
 });
 
-type Group = { label: string; items: ListSessionItem[]; startIndex: number };
+type Group = { label: string; items: Row[]; startIndex: number };
 
 const startOfDay = (d: Date) => {
   const x = new Date(d);
@@ -138,14 +169,14 @@ const startOfDay = (d: Date) => {
   return x.getTime();
 };
 
-const groupedSessions = computed((): Group[] => {
+const groupedRows = computed((): Group[] => {
   const now = new Date();
   const today = startOfDay(now);
   const yesterday = today - 86400000;
   const week = today - 7 * 86400000;
   const month = today - 30 * 86400000;
 
-  const buckets: Record<string, ListSessionItem[]> = {
+  const buckets: Record<string, Row[]> = {
     today: [],
     yesterday: [],
     week: [],
@@ -153,17 +184,19 @@ const groupedSessions = computed((): Group[] => {
     older: [],
   };
 
-  for (const s of flatSessions.value) {
-    const ts = (s.latest_message_at || 0) * (s.latest_message_at && s.latest_message_at < 1e12 ? 1000 : 1);
+  for (const row of rows.value) {
+    const ts = row.timestamp
+      ? row.timestamp * (row.timestamp < 1e12 ? 1000 : 1)
+      : 0;
     if (!ts) {
-      buckets.older.push(s);
+      buckets.older.push(row);
       continue;
     }
-    if (ts >= today) buckets.today.push(s);
-    else if (ts >= yesterday) buckets.yesterday.push(s);
-    else if (ts >= week) buckets.week.push(s);
-    else if (ts >= month) buckets.month.push(s);
-    else buckets.older.push(s);
+    if (ts >= today) buckets.today.push(row);
+    else if (ts >= yesterday) buckets.yesterday.push(row);
+    else if (ts >= week) buckets.week.push(row);
+    else if (ts >= month) buckets.month.push(row);
+    else buckets.older.push(row);
   }
 
   const labels: [keyof typeof buckets, string][] = [
@@ -193,7 +226,7 @@ const formatTime = (raw: number) => {
   const now = new Date();
   const today = startOfDay(now);
   const yesterday = today - 86400000;
-  const timeStr = d.toLocaleTimeString(locale.value === 'zh' ? 'zh-CN' : 'en-US', {
+  const timeStr = d.toLocaleTimeString(localeToIntlTag(locale.value), {
     hour: 'numeric',
     minute: '2-digit',
     hour12: false,
@@ -204,10 +237,10 @@ const formatTime = (raw: number) => {
 
   const weekAgo = today - 7 * 86400000;
   if (ts >= weekAgo) {
-    const weekday = d.toLocaleDateString(locale.value === 'zh' ? 'zh-CN' : 'en-US', { weekday: 'short' });
+    const weekday = d.toLocaleDateString(localeToIntlTag(locale.value), { weekday: 'short' });
     return `${weekday} ${timeStr}`;
   }
-  return d.toLocaleDateString(locale.value === 'zh' ? 'zh-CN' : 'en-US', {
+  return d.toLocaleDateString(localeToIntlTag(locale.value), {
     month: 'short',
     day: 'numeric',
   });
@@ -228,19 +261,52 @@ const selectFirst = () => {
     createNewTask();
     return;
   }
-  const s = flatSessions.value[highlightIndex.value];
-  if (s) openSession(s.session_id);
+  const row = rows.value[highlightIndex.value];
+  if (row) openSession(row.session_id);
 };
+
+let debounceHandle: ReturnType<typeof setTimeout> | null = null;
+let requestSeq = 0;
+
+watch(query, (q) => {
+  if (debounceHandle) clearTimeout(debounceHandle);
+  const trimmed = q.trim();
+  if (!trimmed) {
+    searchResults.value = null;
+    searching.value = false;
+    return;
+  }
+  searching.value = true;
+  const seq = ++requestSeq;
+  debounceHandle = setTimeout(async () => {
+    try {
+      const res = await searchMessages(trimmed, 30);
+      if (seq !== requestSeq) return; // a newer keystroke already superseded this
+      searchResults.value = res.results;
+    } catch (e) {
+      console.error('Search failed', e);
+      if (seq === requestSeq) searchResults.value = [];
+    } finally {
+      if (seq === requestSeq) searching.value = false;
+    }
+  }, 300);
+});
 
 watch(
   () => props.visible,
   async (v) => {
     if (v) {
       query.value = '';
+      searchResults.value = null;
+      searching.value = false;
       highlightIndex.value = -1;
       await nextTick();
       inputRef.value?.focus();
     }
   },
 );
+
+onBeforeUnmount(() => {
+  if (debounceHandle) clearTimeout(debounceHandle);
+});
 </script>

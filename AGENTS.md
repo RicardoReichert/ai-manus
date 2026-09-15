@@ -76,6 +76,83 @@ This starts: frontend (5173), backend (8000), sandbox (8080), mockserver (8090),
 | `SANDBOX_ADDRESS` | `sandbox` | Use single dev sandbox container |
 | `LOG_LEVEL` | `DEBUG` | Verbose logging |
 
+### Model Registry (Settings > Models)
+
+Selectable LLMs (OpenAI, Google Gemini, LM Studio, Ollama, OpenRouter, …) live in MongoDB
+(`ModelConfigDocument`), managed by an admin through **Settings > Models** — not through a
+mounted file. Provider credentials are encrypted at rest with Fernet
+(`backend/app/infrastructure/security/secret_box.py`).
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `MODEL_ENCRYPTION_KEY` | Yes, to store/read any credential | Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. No default — rotating it makes stored credentials unreadable, so an operator must set it deliberately. Local models with no credential (LM Studio, Ollama) work without it. |
+
+**Upgrading an existing deployment** (one that relied on the old `models.json` + `MODEL_NAME`/`API_KEY`
+registry): the database starts empty, so run the one-time importer before the model dropdown will
+show anything:
+
+```bash
+docker compose -f docker-compose-development.yml exec backend uv run python -m scripts.import_models
+# --dry-run to preview first
+```
+
+It reads `MODELS_CONFIG_PATH` (default `/etc/models.json`, see `models.json.example`) plus the
+global `MODEL_NAME`/`MODEL_PROVIDER`/`API_KEY`, and is idempotent — safe to re-run.
+
+**Capabilities and tool profiles.** Registering a model auto-detects capabilities from a built-in
+catalog (`infrastructure/external/llm/model_catalog.py`) — known small models (Qwen3-4B, Gemma 4
+E4B, Phi-4-Mini) get a reduced tool budget and, when their profile is set to `lean`, browsing is
+delegated to an isolated sub-agent (`domain/services/agents/web.py`) instead of exposing the
+12-tool browser toolkit directly — the mechanism that keeps small models usable without losing
+functionality on large ones. Large/unrecognized hosted models default to full capability
+(no behavior change). See `domain/services/tools/profiles.py` for the `full`/`lean` definitions.
+
+**Claw sessions and model selection**: a user may own several Claw sessions (`/api/v1/claw/sessions`,
+`ClawSessionDocument`/`claw_sessions` collection — replaces the old 1:1-per-user `Claw`/`claws`
+collection). A session picks its model **at creation** (mandatory) and that model is pinned while its
+container is live; the only way to change it is `POST /claw/sessions/{id}/restart`, which kills the
+current container and starts a fresh one on the new model. Each session gets its own Docker volume
+(`ClawSession.volume_name`, mounted at `/home/node/.openclaw` by `DockerClawRuntime.create()`), which
+is what makes OpenClaw's own native conversational memory survive that restart — verified directly:
+a second model, on a freshly-created container reusing the same volume, correctly recalled
+information only ever told to the first, now-destroyed container's model. Expiry (TTL) only stops the
+container; the session record and its volume persist until the user explicitly deletes the session
+(`DELETE /claw/sessions/{id}`, which also removes the volume — the one operation that actually
+discards a session's memory). `openai_routes.py::_resolve_llm_target` resolves the model per-request
+from the session that owns the Bearer api_key (now per-session, not per-user), so a restart needs no
+config regeneration. In **dev mode** (`CLAW_ADDRESS=claw`, single shared `FixedClawRuntime` container),
+every session authenticates with the same fixed `MANUS_API_KEY`, so `claw_service.verify_api_key`
+always resolves to a fixed service account rather than the real user — per-session model routing is
+only exercisable against a real per-user deployment (`DockerClawRuntime`), not the dev stack; the
+volume-per-session mechanism is likewise a `DockerClawRuntime`-only concern (`FixedClawRuntime`'s
+`create`/`destroy`/`destroy_volume` are all no-ops, matching its single-shared-container design).
+
+**Python and Docker-in-Docker inside Claw**: `claw/Dockerfile` builds on `ubuntu:24.04` (not the
+prebuilt `ghcr.io/openclaw/openclaw` image) with `openclaw` installed via `npm i -g openclaw@<pinned
+version>` — the same way any user installs it outside Docker. Python 3 is installed unconditionally
+(`python3`/`pip`/`venv`), so OpenClaw's own built-in `exec` tool can already run `.py` scripts with no
+plugin changes. Docker Engine (CLI + `dockerd`) is also installed in the image, but only *started* when
+`CLAW_DOCKER_IN_DOCKER=true` (`Settings.claw_docker_in_docker`, default `False`) — `DockerClawRuntime`
+then also sets `privileged=True` on the container, since `dockerd` needs it to create its own nested
+namespaces/cgroups. `entrypoint.sh` starts this nested `dockerd` (storage driver `vfs`) as root, waits
+for it, then drops to the unprivileged `node` user to run `openclaw gateway` itself via `sudo -u node`.
+**This is the container's own isolated daemon at its own `/var/run/docker.sock` — the host's socket is
+never mounted into Claw**, matching OpenClaw's own documented guidance to never give an agent sandbox
+the host's Docker socket. Once enabled, no `manus-claw` plugin change is needed: the existing `exec`
+tool just finds `docker` on `PATH` and uses it. Known limitation: the nested daemon's `/var/lib/docker`
+is not on a persistent volume, so images pulled inside Claw are lost on container restart/TTL expiry —
+acceptable for one-off task execution, revisit with a dedicated volume if that turns out to matter.
+`privileged: true` is a real container-privilege increase (not host-root like a socket mount, but a
+materially larger kernel-facing surface than the default container) — keep it opt-in per deployment.
+
+**Operator terminal and tool-event surfacing**: The Claw panel exposes two capabilities. First, `gateway.terminal.enabled`
+(a setting in the OpenClaw Gateway config) activates an operator-terminal-backed interactive terminal within the panel, allowing users
+to execute shell commands in the agent's environment in real-time — useful for debugging or querying tool state mid-execution.
+Second, the backend now surfaces `session.tool` events through the Claw WebSocket (`/api/v1/ws/claw/{session_id}`, distinct from
+the Manus Agent's `/api/v1/ws/chat`), piping tool-call activity to the Computer panel's tool-call log: users see each tool
+invocation (name, input, output) as the agent executes, making it easy to spot stuck steps or unexpected tool behavior without
+hunting through server logs.
+
 ### Running Services Individually (Without Docker)
 
 **Backend:**

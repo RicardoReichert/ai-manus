@@ -48,13 +48,53 @@
       </div>
       <span class="w-full truncate text-start">{{ t('Add local files') }}</span>
     </button>
+
+    <button
+      type="button"
+      data-testid="slash-from_library"
+      class="flex items-center gap-2 w-full p-2 rounded-[8px] hover:bg-[var(--fill-tsp-white-main)] cursor-pointer text-[var(--text-primary)] text-sm"
+      @mousedown.prevent
+      @click="onSelectFromLibrary"
+    >
+      <div class="size-5 flex items-center justify-center shrink-0">
+        <Library :size="16" class="text-[var(--icon-tertiary)]" />
+      </div>
+      <span class="w-full truncate text-start">{{ t('From Library') }}</span>
+    </button>
+
+    <button
+      type="button"
+      data-testid="slash-recent_tasks"
+      class="flex items-center gap-2 w-full p-2 rounded-[8px] hover:bg-[var(--fill-tsp-white-main)] cursor-pointer text-[var(--text-primary)] text-sm"
+      @mousedown.prevent
+      @click="onSelectRecentTasks"
+    >
+      <div class="size-5 flex items-center justify-center shrink-0">
+        <History :size="16" class="text-[var(--icon-tertiary)]" />
+      </div>
+      <span class="w-full truncate text-start">{{ t('Recent Tasks') }}</span>
+    </button>
+
+    <button
+      v-if="showPlanItem"
+      type="button"
+      data-testid="slash-plan"
+      class="flex items-center gap-2 w-full p-2 rounded-[8px] hover:bg-[var(--fill-tsp-white-main)] cursor-pointer text-[var(--text-primary)] text-sm"
+      @mousedown.prevent
+      @click="onOpenPlan"
+    >
+      <div class="size-5 flex items-center justify-center shrink-0">
+        <ListTodo :size="16" class="text-[var(--icon-tertiary)]" />
+      </div>
+      <span class="w-full truncate text-start">{{ t('Plan (Ctrl+/)') }}</span>
+    </button>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, Paperclip, Puzzle } from 'lucide-vue-next'
+import { ChevronRight, Paperclip, Puzzle, Library, History, ListTodo } from 'lucide-vue-next'
 import ChatBoxPlusSkillsPanel from './ChatBoxPlusSkillsPanel.vue'
 import type { Skill } from '@/types/skill'
 import type { SkillsPlaceholderVariant } from '@/components/skills/SkillsPlaceholderDialog.vue'
@@ -62,6 +102,7 @@ import type { SkillsPlaceholderVariant } from '@/components/skills/SkillsPlaceho
 const props = defineProps<{
   open: boolean
   positionStyle?: Record<string, string> | string
+  showPlanItem?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -69,6 +110,9 @@ const emit = defineEmits<{
   (e: 'select-skill', skill: Skill): void
   (e: 'add-skill', variant: SkillsPlaceholderVariant): void
   (e: 'manage-skills'): void
+  (e: 'select-from-library'): void
+  (e: 'select-recent-tasks'): void
+  (e: 'open-plan'): void
   (e: 'close'): void
 }>()
 
@@ -104,6 +148,21 @@ const onManageSkills = () => {
 
 const onSkillsClose = () => {
   skillsOpen.value = false
+  emit('close')
+}
+
+const onSelectFromLibrary = () => {
+  emit('select-from-library')
+  emit('close')
+}
+
+const onSelectRecentTasks = () => {
+  emit('select-recent-tasks')
+  emit('close')
+}
+
+const onOpenPlan = () => {
+  emit('open-plan')
   emit('close')
 }
 </script>

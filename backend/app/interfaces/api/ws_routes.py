@@ -592,3 +592,4 @@ async def vnc_ws(websocket: WebSocket, session_id: str):
             await websocket.close(code=1011, reason=f"WebSocket error: {str(e)}")
         except Exception:
             pass
+

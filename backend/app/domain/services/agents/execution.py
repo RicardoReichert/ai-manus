@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import AsyncGenerator, List
 import logging
 
@@ -156,6 +157,7 @@ class ExecutionAgent(BaseAgent):
             if isinstance(event, ErrorEvent):
                 step.status = ExecutionStatus.FAILED
                 step.error = event.error
+                step.finished_at = datetime.now(timezone.utc)
                 yield StepEvent(status=StepStatus.FAILED, step=step)
             elif isinstance(event, StructuredOutputEvent):
                 report: StepReport = event.output
@@ -163,6 +165,7 @@ class ExecutionAgent(BaseAgent):
                 step.success = report.success
                 step.result = report.result
                 step.attachments = report.attachments
+                step.finished_at = datetime.now(timezone.utc)
                 # Outcome stays on the StepEvent (chat timeline under StepGroup).
                 # Do not also emit MessageEvent — that would break consecutive
                 # stepGroup pb-0 connection in the UI.
@@ -216,11 +219,16 @@ class ExecutionAgent(BaseAgent):
         ):
             if isinstance(event, StructuredOutputEvent):
                 result: FinalResult = event.output
+                logger.debug(f"Execution agent summary: {result.message}")
                 attachments = [
                     FileInfo(file_path=file_path)
                     for file_path in result.attachments
                 ]
-                yield MessageEvent(message=result.message, attachments=attachments)
+                yield MessageEvent(
+                    message=result.message,
+                    attachments=attachments,
+                    follow_ups=result.follow_ups or None,
+                )
                 continue
             if isinstance(event, MessageEvent):
                 continue

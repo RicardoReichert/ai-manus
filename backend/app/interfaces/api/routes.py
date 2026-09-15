@@ -1,10 +1,14 @@
 from fastapi import APIRouter
-from . import session_routes, file_routes, auth_routes, config_routes, project_routes, library_routes, skill_routes, ws_routes
+from . import (
+    session_routes, file_routes, auth_routes, config_routes,
+    project_routes, library_routes, skill_routes, ws_routes,
+    search_routes, model_config_routes,
+)
 
 def create_api_router() -> APIRouter:
     """Create and configure the main API router"""
     api_router = APIRouter()
-    
+
     # Include all sub-routers
     api_router.include_router(session_routes.router)
     api_router.include_router(file_routes.router)
@@ -13,8 +17,10 @@ def create_api_router() -> APIRouter:
     api_router.include_router(project_routes.router)
     api_router.include_router(library_routes.router)
     api_router.include_router(skill_routes.router)
+    api_router.include_router(search_routes.router)
     api_router.include_router(ws_routes.router)
-    
+    api_router.include_router(model_config_routes.router)
+
     return api_router
 
 # Create the main router instance

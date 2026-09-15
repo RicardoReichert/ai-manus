@@ -1,8 +1,9 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { 
-  login as apiLogin, 
-  register as apiRegister, 
+  login as apiLogin,
+  register as apiRegister,
   logout as apiLogout,
+  logoutAll as apiLogoutAll,
   getCurrentUser,
   refreshToken as apiRefreshToken,
   setAuthToken,
@@ -157,6 +158,23 @@ export function useAuth() {
   }
 
   /**
+   * Log out of every device/session for the current user, then clear local state
+   */
+  const logoutAll = async () => {
+    try {
+      isLoading.value = true
+      authError.value = null
+      await apiLogoutAll()
+    } catch (error: any) {
+      console.error('Logout-all API failed:', error)
+      // Continue with local logout even if API fails
+    } finally {
+      clearAuth()
+      isLoading.value = false
+    }
+  }
+
+  /**
    * Clear authentication state
    */
   const clearAuth = () => {
@@ -245,6 +263,7 @@ export function useAuth() {
     login,
     register,
     logout,
+    logoutAll,
     initAuth,
     loadCurrentUser,
     refreshAuthToken,

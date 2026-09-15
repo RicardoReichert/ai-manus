@@ -1,9 +1,14 @@
 <template>
-  <div dir="ltr" class="flex flex-col flex-1 min-h-0 h-full w-full">
+  <div dir="ltr" class="relative flex flex-col flex-1 min-h-0 h-full w-full">
     <div
       ref="terminalEl"
       class="agent-workspace-terminal-panel flex-1 min-h-0 outline-none overflow-hidden w-full h-full"
       :class="isDark ? 'agent-workspace-terminal-panel-dark' : 'agent-workspace-terminal-panel-light'"
+    />
+    <ChatMessageCopyButton
+      :text="copyText"
+      button-class="absolute top-2 end-2 bg-[var(--background-gray-main)]"
+      :icon-class="isDark ? 'text-[var(--icon-white-tsp)]' : ''"
     />
   </div>
 </template>
@@ -17,6 +22,7 @@ import { viewShellSession } from '@/api/agent';
 import { ToolContent } from '@/types/message';
 import { useLiveToolContent } from '@/composables/useLiveToolContent';
 import { eventBus } from '@/utils/eventBus';
+import ChatMessageCopyButton from '@/components/ChatMessageCopyButton.vue';
 
 const props = defineProps<{
   sessionId: string;
@@ -38,6 +44,8 @@ let fitAddon: FitAddon | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let themeObserver: MutationObserver | null = null;
 let lastText = '';
+// Mirrors lastText in a ref so the copy button (reactive) can see it.
+const copyText = ref('');
 let terminalDebounceTimer: number | null = null;
 let pendingTerminalOutput: unknown = null;
 
@@ -131,6 +139,7 @@ const consoleToText = (consoleData: unknown): string => {
 const writeTerminal = (text: string) => {
   if (!term || text === lastText) return;
   lastText = text;
+  copyText.value = text;
   // Official: synchronized clear + home, then content
   term.write(`\x1b[?2026h\x1b[2J\x1b[3J\x1b[H${text}\x1b[?2026l`);
 };
@@ -270,5 +279,6 @@ onBeforeUnmount(() => {
   term = null;
   fitAddon = null;
   lastText = '';
+  copyText.value = '';
 });
 </script>

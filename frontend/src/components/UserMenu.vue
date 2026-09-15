@@ -6,9 +6,7 @@
                 class="flex w-[300px] flex-col bg-[var(--background-menu-white)] rounded-[20px] border-[0.5px] border-[var(--border-dark)] shadow-[0px_8px_32px_0px_var(--shadow-XS)]">
                 <div class="flex gap-2 px-4 pt-5 pb-3 w-full">
                     <div class="relative flex items-center justify-center font-bold cursor-pointer flex-shrink-0">
-                        <div class="relative flex items-center justify-center font-bold flex-shrink-0 rounded-full overflow-hidden"
-                            style="width: 48px; height: 48px; font-size: 24px; color: rgba(255, 255, 255, 0.9); background-color: rgb(59, 130, 246);">
-                            {{ avatarLetter }}</div>
+                        <UserAvatar :avatar-url="currentUser?.avatar_url" :fallback-letter="avatarLetter" :size="48" />
                     </div>
                     <div class="flex overflow-hidden flex-col justify-center">
                         <div class="flex gap-1 items-center w-full"><span
@@ -33,6 +31,16 @@
                         </div>
                         <div
                             class="flex gap-3 items-center p-2 rounded-lg cursor-pointer text-[var(--text-primary)] hover:bg-[var(--fill-tsp-white-main)]"
+                            @click="handlePersonalizationClick">
+                            <div class="flex-shrink-0 w-5 h-5">
+                                <LayoutGrid :size="20" />
+                            </div>
+                            <span
+                                class="overflow-hidden flex-1 text-sm font-medium leading-5 whitespace-nowrap text-ellipsis">{{
+                                t('Personalization') }}</span>
+                        </div>
+                        <div
+                            class="flex gap-3 items-center p-2 rounded-lg cursor-pointer text-[var(--text-primary)] hover:bg-[var(--fill-tsp-white-main)]"
                             @click="handleSettingsClick">
                             <div class="flex-shrink-0 w-5 h-5">
                                 <Settings2 :size="20" />
@@ -41,6 +49,29 @@
                                 class="overflow-hidden flex-1 text-sm font-medium leading-5 whitespace-nowrap text-ellipsis">{{
                                 t('Settings') }}</span>
                         </div>
+                        <div class="w-full h-[1px] my-1 bg-[var(--border-main)]"></div>
+                        <div
+                            class="flex gap-3 items-center p-2 rounded-lg cursor-pointer text-[var(--text-primary)] hover:bg-[var(--fill-tsp-white-main)]"
+                            @click="handleHelpClick">
+                            <div class="flex-shrink-0 w-5 h-5">
+                                <CircleHelp :size="20" />
+                            </div>
+                            <span
+                                class="overflow-hidden flex-1 text-sm font-medium leading-5 whitespace-nowrap text-ellipsis">{{
+                                t('Get help') }}</span>
+                        </div>
+                        <a
+                            :href="docsUrl"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="flex gap-3 items-center p-2 rounded-lg cursor-pointer text-[var(--text-primary)] hover:bg-[var(--fill-tsp-white-main)]">
+                            <div class="flex-shrink-0 w-5 h-5">
+                                <FileText :size="20" />
+                            </div>
+                            <span
+                                class="overflow-hidden flex-1 text-sm font-medium leading-5 whitespace-nowrap text-ellipsis">{{
+                                t('Documentation') }}</span>
+                        </a>
                         <div class="w-full h-[1px] my-1 bg-[var(--border-main)]"></div>
                         <div v-if="authProvider !== 'none'"
                             class="flex gap-3 items-center p-2 rounded-lg cursor-pointer hover:bg-[var(--fill-tsp-white-main)] text-[var(--function-error)]"
@@ -66,13 +97,18 @@ import { useI18n } from 'vue-i18n';
 import { useAuth } from '../composables/useAuth';
 import { useSettingsDialog } from '../composables/useSettingsDialog';
 import { getCachedAuthProvider } from '../api/config';
-import { LogOut, User, Settings2 } from 'lucide-vue-next';
+import { LogOut, User, Settings2, LayoutGrid, CircleHelp, FileText } from 'lucide-vue-next';
+import UserAvatar from './UserAvatar.vue';
 
 const router = useRouter();
 const { t } = useI18n();
 const { currentUser, logout } = useAuth();
 const { openSettingsDialog } = useSettingsDialog();
 const authProvider = ref<string | null>(null);
+
+// Same docs site HelpSettings.vue links to; kept here too since "Documentos"
+// is its own item in the official menu (distinct from "Get help").
+const docsUrl = 'https://docs.ai-manus.com/#/en/';
 
 // Get first letter of user's fullname for avatar display
 const avatarLetter = computed(() => {
@@ -87,6 +123,16 @@ const handleAccountClick = () => {
 // Handle Settings click - open settings dialog on General tab
 const handleSettingsClick = () => {
     openSettingsDialog('general');
+};
+
+// Handle Personalization click - open settings dialog on Personalization tab
+const handlePersonalizationClick = () => {
+    openSettingsDialog('personalization');
+};
+
+// Handle Get help click - open settings dialog on Help tab (docs + issues)
+const handleHelpClick = () => {
+    openSettingsDialog('help');
 };
 
 // Handle logout action

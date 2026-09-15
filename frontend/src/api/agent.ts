@@ -15,8 +15,19 @@ export type ChatStreamCallbacks = {
  * Create Session
  * @returns Session
  */
-export async function createSession(): Promise<CreateSessionResponse> {
-  const response = await apiClient.put<ApiResponse<CreateSessionResponse>>('/sessions');
+export async function createSession(
+  projectId?: string,
+  taskMode?: 'agent' | 'chat',
+  modelName?: string,
+  modelProvider?: string
+): Promise<CreateSessionResponse> {
+  const body = (projectId || taskMode || modelName || modelProvider) ? {
+    project_id: projectId,
+    task_mode: taskMode,
+    model_name: modelName,
+    model_provider: modelProvider,
+  } : undefined;
+  const response = await apiClient.put<ApiResponse<CreateSessionResponse>>('/sessions', body);
   return response.data.data;
 }
 
@@ -25,8 +36,10 @@ export async function getSession(sessionId: string): Promise<GetSessionResponse>
   return response.data.data;
 }
 
-export async function getSessions(): Promise<ListSessionResponse> {
-  const response = await apiClient.get<ApiResponse<ListSessionResponse>>('/sessions');
+export async function getSessions(filters?: { archived?: boolean; shared?: boolean }): Promise<ListSessionResponse> {
+  const response = await apiClient.get<ApiResponse<ListSessionResponse>>('/sessions', {
+    params: filters,
+  });
   return response.data.data;
 }
 
@@ -119,6 +132,18 @@ export async function updateSessionTaskMode(
   return response.data.data;
 }
 
+export async function updateSessionModel(
+  sessionId: string,
+  modelName: string,
+  modelProvider?: string
+): Promise<{ session_id: string; model_name: string; model_provider?: string }> {
+  const response = await apiClient.patch<ApiResponse<{ session_id: string; model_name: string; model_provider?: string }>>(
+    `/sessions/${sessionId}/model`,
+    { model_name: modelName, model_provider: modelProvider }
+  );
+  return response.data.data;
+}
+
 export async function favoriteSession(sessionId: string): Promise<{ session_id: string; is_favorite: boolean }> {
   const response = await apiClient.post<ApiResponse<{ session_id: string; is_favorite: boolean }>>(
     `/sessions/${sessionId}/favorite`
@@ -137,6 +162,43 @@ export async function pinSession(sessionId: string, isPinned: boolean): Promise<
   const response = await apiClient.post<ApiResponse<{ session_id: string; is_pinned: boolean }>>(
     `/sessions/${sessionId}/pin`,
     { is_pinned: isPinned }
+  );
+  return response.data.data;
+}
+
+export interface SessionUsage {
+  session_id: string;
+  worked_ms: number;
+  pages_viewed: number;
+  commands_run: number;
+  api_calls: number;
+  files_created: number;
+  rating: number | null;
+}
+
+export async function getSessionUsage(sessionId: string): Promise<SessionUsage> {
+  const response = await apiClient.get<ApiResponse<SessionUsage>>(`/sessions/${sessionId}/usage`);
+  return response.data.data;
+}
+
+export async function rateSession(sessionId: string, rating: number | null): Promise<{ session_id: string; rating: number | null }> {
+  const response = await apiClient.post<ApiResponse<{ session_id: string; rating: number | null }>>(
+    `/sessions/${sessionId}/rating`,
+    { rating },
+  );
+  return response.data.data;
+}
+
+export async function archiveSession(sessionId: string): Promise<{ session_id: string; is_archived: boolean }> {
+  const response = await apiClient.post<ApiResponse<{ session_id: string; is_archived: boolean }>>(
+    `/sessions/${sessionId}/archive`
+  );
+  return response.data.data;
+}
+
+export async function unarchiveSession(sessionId: string): Promise<{ session_id: string; is_archived: boolean }> {
+  const response = await apiClient.delete<ApiResponse<{ session_id: string; is_archived: boolean }>>(
+    `/sessions/${sessionId}/archive`
   );
   return response.data.data;
 }

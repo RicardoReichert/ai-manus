@@ -1,6 +1,6 @@
 import logging
 from enum import Enum
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, List, Optional
 
 from app.domain.external.browser import Browser
 from app.domain.external.llm import LLM
@@ -33,6 +33,9 @@ from app.domain.services.tools.message import MessageToolkit
 from app.domain.services.tools.search import SearchToolkit
 from app.domain.services.tools.shell import ShellToolkit
 from app.domain.services.tools.skill import SkillToolkit
+from app.domain.services.tools.delegation import DelegationToolkit
+from app.domain.services.tools.profiles import toolkits_for_profile, select_tool_names
+from app.domain.services.agents.web import WebAgent
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +77,9 @@ class PlanActFlow(BaseFlow):
         llm: LLM,
         search_engine: Optional[SearchEngine] = None,
         project_repository: Optional[ProjectRepository] = None,
+        tool_profile: str = "full",
+        enabled_tools: Optional[List[str]] = None,
+        max_tools: Optional[int] = None,
     ):
         self._agent_id = agent_id
         self._repository = agent_repository
@@ -87,16 +93,70 @@ class PlanActFlow(BaseFlow):
         self._resume_waiting = False
 
         self._skill_toolkit = SkillToolkit()
-        tools = [
-            ShellToolkit(sandbox),
-            BrowserToolkit(browser),
-            FileToolkit(sandbox),
-            MessageToolkit(),
-            self._skill_toolkit,
-            mcp_tool,
-        ]
+        all_toolkits = {
+            "shell": ShellToolkit(sandbox),
+            "browser": BrowserToolkit(browser),
+            "file": FileToolkit(sandbox),
+            "message": MessageToolkit(),
+            "skill": self._skill_toolkit,
+            "mcp": mcp_tool,
+        }
         if search_engine:
-            tools.append(SearchToolkit(search_engine))
+            all_toolkits["search"] = SearchToolkit(search_engine)
+
+        # None (the "full" profile) means no restriction, so a model with no
+        # configured profile — or one running on the global default — gets
+        # exactly the toolset the system always had. mcp is never gated by a
+        # profile: it is already opt-in per-deployment via mcp.json.
+        allowed = toolkits_for_profile(tool_profile)
+        if allowed is None:
+            tools = list(all_toolkits.values())
+        else:
+            tools = [
+                toolkit for key, toolkit in all_toolkits.items()
+                if key in allowed or key in ("mcp", "skill")
+            ]
+            if "browser" not in allowed:
+                # Browsing isn't dropped, it's delegated: an isolated
+                # WebAgent (own toolkit, own memory namespace) takes the 12
+                # browser tools instead, so the supervisor's own tool count
+                # stays within the profile's budget regardless of how many
+                # steps a browsing task needs.
+                web_agent = WebAgent(
+                    agent_id=agent_id,
+                    agent_repository=agent_repository,
+                    llm=llm,
+                    tools=[all_toolkits["browser"]],
+                )
+                tools.append(DelegationToolkit(web_agent))
+
+        # enabled_tools narrows within the resolved toolkits, and max_tools
+        # trims the profile's own default set when the admin hasn't picked
+        # explicit tools — both go through select_tool_names, the single
+        # source of truth for "which tool names survive a profile" (this
+        # used to be a bespoke filter duplicating that function's contract;
+        # see domain/services/tools/profiles.py). mcp is excluded from the
+        # dict below (not merely skipped in the loop), so it is never a
+        # candidate for either enabled_tools or max_tools: its tools are
+        # discovered asynchronously after this constructor returns
+        # (MCPToolkit.initialized()), so filtering here would just be
+        # overwritten later, and MCP access is already opt-in per-deployment
+        # via mcp.json.
+        toolkits_by_name = {toolkit.name: toolkit for toolkit in tools if toolkit.name != "mcp"}
+        available_by_toolkit = {
+            name: [t.name for t in toolkit.get_tools()]
+            for name, toolkit in toolkits_by_name.items()
+        }
+        allowed_names = set(
+            select_tool_names(
+                available_by_toolkit,
+                tool_profile,
+                enabled_tools=enabled_tools,
+                max_tools=max_tools,
+            )
+        )
+        for toolkit in toolkits_by_name.values():
+            toolkit.tools = [t for t in toolkit.get_tools() if t.name in allowed_names]
 
         self.planner = PlannerAgent(
             agent_id=self._agent_id,

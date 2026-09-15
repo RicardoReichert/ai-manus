@@ -1,4 +1,4 @@
-from typing import AsyncGenerator, AsyncIterable, List
+from typing import AsyncGenerator, AsyncIterable, List, Optional
 
 from app.domain.external.llm import LLM
 from app.domain.models.agent_output import FinalResult
@@ -127,7 +127,11 @@ class ManusAgent(BaseAgent):
             )
         return await super().invoke_tool(tool, tool_call)
 
-    async def ask_with_messages(self, messages: List[LLMMessage]) -> LLMMessage:
+    async def ask_with_messages(
+        self,
+        messages: List[LLMMessage],
+        tool_choice: Optional[str] = None,
+    ) -> LLMMessage:
         if self._injected_plan_text:
             for message in reversed(messages):
                 if message.role == Role.TOOL and message.name == "replan":
@@ -140,7 +144,7 @@ class ManusAgent(BaseAgent):
                     message.content += f"\n\n{self._injected_plan_complete_hint}"
                     self._injected_plan_complete_hint = None
                     break
-        return await super().ask_with_messages(messages)
+        return await super().ask_with_messages(messages, tool_choice=tool_choice)
 
     async def _fan_out(
         self,

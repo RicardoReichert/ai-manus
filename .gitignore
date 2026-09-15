@@ -126,6 +126,7 @@ coverage/
 .vite/
 docker-compose-test.yml
 mcp.json
+models.json
 
 # Frontend whitelist
 !frontend/src/lib/
@@ -135,3 +136,4 @@ specs
 # Local demo media (never commit). Upload via gh image, then update docs/demos.yml.
 tmp/
 .worktrees/
+.superpowers/

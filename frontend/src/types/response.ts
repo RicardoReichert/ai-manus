@@ -21,6 +21,8 @@ export interface GetSessionResponse {
     is_pinned: boolean;
     project_id: string | null;
     task_mode: 'agent' | 'chat';
+    model_name: string | null;
+    model_provider: string | null;
 }
 
 export interface ListSessionItem {
@@ -33,8 +35,11 @@ export interface ListSessionItem {
     is_shared: boolean;
     is_favorite: boolean;
     is_pinned: boolean;
+    is_archived: boolean;
     project_id: string | null;
     task_mode?: 'agent' | 'chat';
+    model_name?: string | null;
+    model_provider?: string | null;
 }
 
 export interface ListSessionResponse {

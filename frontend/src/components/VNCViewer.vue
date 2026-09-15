@@ -12,11 +12,14 @@ import { getVNCUrl } from '@/api/agent';
 // @ts-expect-error - @novnc/novnc ships no type declarations
 import RFB from '@novnc/novnc/lib/rfb';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   sessionId: string;
   enabled?: boolean;
   viewOnly?: boolean;
-}>();
+  urlResolver?: (sessionId: string) => string;
+}>(), {
+  urlResolver: getVNCUrl
+});
 
 const emit = defineEmits<{
   connected: [];
@@ -37,7 +40,7 @@ const initVNCConnection = async () => {
   }
 
   try {
-    const wsUrl = getVNCUrl(props.sessionId);
+    const wsUrl = props.urlResolver(props.sessionId);
 
     // Create NoVNC connection
     rfb = new RFB(vncContainer.value, wsUrl, {

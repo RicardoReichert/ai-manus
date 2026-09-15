@@ -34,8 +34,11 @@ class SessionSummary(BaseModel):
     is_shared: bool = False
     is_favorite: bool = False
     is_pinned: bool = False
+    is_archived: bool = False
     project_id: Optional[str] = None
     task_mode: TaskMode = TaskMode.AGENT
+    model_name: Optional[str] = None
+    model_provider: Optional[str] = None
 
 
 class Session(BaseModel):
@@ -57,8 +60,13 @@ class Session(BaseModel):
     is_shared: bool = False  # Whether this session is shared publicly
     is_favorite: bool = False
     is_pinned: bool = False
+    is_archived: bool = False
     project_id: Optional[str] = None
     task_mode: TaskMode = TaskMode.AGENT
+    model_name: Optional[str] = None
+    model_provider: Optional[str] = None
+    # TAREFA 4.1 — 1-5 star rating on the usage panel; None if never rated.
+    rating: Optional[int] = None
 
     def get_last_plan(self) -> Optional[Plan]:
         """Get the last plan from the events"""

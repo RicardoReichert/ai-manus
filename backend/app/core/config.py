@@ -4,6 +4,8 @@ import logging
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
+from pydantic import BaseModel
+
 logger = logging.getLogger(__name__)
 
 
@@ -66,6 +68,11 @@ class Settings(BaseSettings):
 
     # Search engine configuration
     search_provider: str | None = "bing_web"  # "baidu", "baidu_web", "google", "bing", "bing_web", "tavily", "serper", "youcom", "custom"
+    # Bing market/locale hint (e.g. "pt-BR", "en-US") sent with bing/bing_web
+    # searches. Without it Bing has no language signal at all and can fall
+    # back to matching only the one word it recognizes confidently in a
+    # non-English query, ignoring the rest — see bing_web_search.py.
+    search_market: str = "pt-BR"
     baidu_search_api_key: str | None = None
     bing_search_api_key: str | None = None
     google_search_api_key: str | None = None
@@ -136,6 +143,19 @@ class Settings(BaseSettings):
 
     # MCP configuration
     mcp_config_path: str = "/etc/mcp.json"
+
+    # Model registry configuration. JSON file declaring the selectable models,
+    # mounted the same way as mcp.json. See models.json.example.
+    # Legacy: only read by scripts/import_models.py to seed the database on
+    # migration; the registry itself is database-backed (ModelConfigDocument).
+    models_config_path: str = "/etc/models.json"
+
+    # Fernet key encrypting provider credentials at rest (ModelConfigDocument).
+    # Required to store or read model API keys — there is intentionally no
+    # fallback, so rotating other secrets can never silently orphan them.
+    # Generate with: python -c "from cryptography.fernet import Fernet; \
+    #   print(Fernet.generate_key().decode())"
+    model_encryption_key: str | None = None
     
     # Logging configuration
     log_level: str = "INFO"

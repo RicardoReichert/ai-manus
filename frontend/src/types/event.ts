@@ -50,6 +50,10 @@ export interface StepEventData extends BaseEventData {
   description: string
   /** Present when the step finished with a concrete outcome. */
   result?: string
+  /** Unix seconds the step started, matching BaseEventData.timestamp. */
+  started_at?: number
+  /** Set once the step finishes; authoritative and survives reload. */
+  duration_ms?: number
 }
 
 export interface MessageEventData extends BaseEventData {
@@ -58,6 +62,8 @@ export interface MessageEventData extends BaseEventData {
   attachments: FileInfo[];
   /** Skill chips invoked with this user turn (composer → chat detail). */
   required_skills?: { id: string; name: string }[];
+  /** Only set on the final summarize() message (TAREFA 5.2). */
+  follow_ups?: string[] | null;
 }
 
 export interface ErrorEventData extends BaseEventData {
