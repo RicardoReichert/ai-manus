@@ -62,6 +62,22 @@ class ModelCapabilities(BaseModel):
             "tool-call turns must be preserved."
         ),
     )
+    temperature: Optional[float] = Field(
+        default=None,
+        description=(
+            "Per-model sampling temperature override. None = use the global "
+            "TEMPERATURE setting. Small/local models tend to need a lower "
+            "value than a hosted frontier default for reliable tool calling."
+        ),
+    )
+    request_timeout: Optional[float] = Field(
+        default=None,
+        description=(
+            "Per-model request timeout in seconds. None = no timeout (the "
+            "historical behavior for every model). A local endpoint that "
+            "hangs otherwise blocks the session forever."
+        ),
+    )
 
     def tool_budget(self, available: int) -> int:
         """How many tools may be shown, given how many exist."""

@@ -62,6 +62,7 @@ class AgentTaskRunner(TaskRunner):
         model_error: Optional[str] = None,
         tool_profile: str = "full",
         enabled_tools: Optional[List[str]] = None,
+        max_tools: Optional[int] = None,
     ):
         self._model_error = model_error
         self._session_id = session_id
@@ -90,6 +91,7 @@ class AgentTaskRunner(TaskRunner):
             project_repository=self._project_repository,
             tool_profile=tool_profile,
             enabled_tools=enabled_tools,
+            max_tools=max_tools,
         )
         # Snapshot file contents before mutating file tools (for Diff/Original views).
         self._file_old_by_call: Dict[str, str] = {}
@@ -229,6 +231,15 @@ class AgentTaskRunner(TaskRunner):
                         await self._sync_file_to_storage(file_path)
                     else:
                         event.tool_content = FileToolContent(content="(No Content)")
+                elif event.tool_name == "delegation":
+                    # The wrapper `browse_web` call itself has no DOM state of
+                    # its own — the sub-agent's own "browser" tool events
+                    # (drained live in base.py's poll loop) already carry
+                    # screenshots for the duration of the call. This branch
+                    # only covers the two bookend CALLED events (start/end of
+                    # the delegated task) so the Computer panel shows the
+                    # current page instead of falling through to "unknown".
+                    event.tool_content = BrowserToolContent(screenshot=await self._get_browser_screenshot())
                 elif event.tool_name == "mcp":
                     logger.debug(f"Processing MCP tool event: function_result={event.function_result}")
                     if event.function_result:
@@ -494,7 +505,7 @@ class AgentTaskRunnerFactory(TaskRunnerFactory):
         if not browser:
             raise RuntimeError(f"Failed to get browser for Sandbox {sandbox_id}")
 
-        llm, model_error, tool_profile, enabled_tools = await self._resolve_llm(session_id)
+        llm, model_error, tool_profile, enabled_tools, max_tools = await self._resolve_llm(session_id)
 
         return AgentTaskRunner(
             session_id=session_id,
@@ -512,36 +523,42 @@ class AgentTaskRunnerFactory(TaskRunnerFactory):
             model_error=model_error,
             tool_profile=tool_profile,
             enabled_tools=enabled_tools,
+            max_tools=max_tools,
         )
 
     async def _resolve_llm(
         self, session_id: str
-    ) -> Tuple[LLM, Optional[str], str, List[str]]:
+    ) -> Tuple[LLM, Optional[str], str, List[str], Optional[int]]:
         """Pick the LLM gateway for this session's chosen model.
 
         Returns the gateway, an error message when the session names a model
         the registry no longer knows about (the caller reports that to the
-        user rather than answering with a different model), and the model's
-        tool profile so PlanActFlow can size the toolset to what the model
-        can actually handle.
+        user rather than answering with a different model), the model's
+        resolved tool profile (``auto`` is already resolved to ``full``/
+        ``lean`` here, via resolve_profile — PlanActFlow never sees ``auto``)
+        so PlanActFlow can size the toolset to what the model can actually
+        handle, and its ``max_tools`` budget.
         """
+        from app.domain.services.tools.profiles import resolve_profile
+
         if not self._session_repository:
-            return self._llm, None, "full", []
+            return self._llm, None, "full", [], None
 
         session = await self._session_repository.find_by_id(session_id)
         if not session or not session.model_name:
-            return self._llm, None, "full", []
+            return self._llm, None, "full", [], None
 
         from app.infrastructure.external.llm.langchain_llm import get_langchain_llm
         from app.infrastructure.external.llm.model_registry import api_key_for, resolve_model
 
+        desc = None
         try:
             desc = await resolve_model(session.model_name)
             if not desc:
                 return self._llm, (
                     f"Model {session.model_name!r} is no longer available. "
                     f"Pick another model for this session and try again."
-                ), "full", []
+                ), "full", [], None
             # desc.model, not session.model_name: the session stores the
             # registry id, which need not equal the provider's model name.
             llm = get_langchain_llm(
@@ -551,9 +568,20 @@ class AgentTaskRunnerFactory(TaskRunnerFactory):
                 api_key=await api_key_for(desc),
                 capabilities=desc.capabilities,
             )
-            return llm, None, desc.tool_profile, desc.enabled_tools
+            resolved_profile = resolve_profile(desc.tool_profile, desc.capabilities.is_constrained)
+            return llm, None, resolved_profile, desc.enabled_tools, desc.capabilities.max_tools
         except Exception as e:
             logger.exception(f"Failed to build LLM for model {session.model_name}: {e}")
+            # The registry lookup may have already succeeded even though the
+            # gateway itself failed to build (e.g. init_chat_model rejecting
+            # a provider-specific kwarg) — use what we already know about
+            # this model instead of failing open to "full", which would hand
+            # a possibly-tiny local model every tool.
+            fallback_profile = (
+                resolve_profile(desc.tool_profile, desc.capabilities.is_constrained) if desc else "full"
+            )
+            fallback_tools = desc.enabled_tools if desc else []
+            fallback_max_tools = desc.capabilities.max_tools if desc else None
             return self._llm, (
                 f"Could not initialize model {session.model_name!r}: {e}"
-            ), "full", []
+            ), fallback_profile, fallback_tools, fallback_max_tools

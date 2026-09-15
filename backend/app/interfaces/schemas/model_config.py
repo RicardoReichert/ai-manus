@@ -41,6 +41,8 @@ class ModelCapabilitiesSchema(BaseModel):
     max_output_tokens: Optional[int] = None
     supports_parallel_tool_calls: bool = True
     strip_thinking_from_history: bool = False
+    temperature: Optional[float] = None
+    request_timeout: Optional[float] = None
 
 
 class CreateModelConfigRequest(BaseModel):
@@ -57,7 +59,13 @@ class CreateModelConfigRequest(BaseModel):
     # Omit to auto-fill from the built-in catalog — the normal path, so an
     # admin never has to know a model's tool-calling quirks.
     capabilities: Optional[ModelCapabilitiesSchema] = None
-    tool_profile: str = "full"
+    # "auto" resolves to "lean"/"full" per-model from its own capabilities
+    # (see domain/services/tools/profiles.py:resolve_profile) — the default
+    # for a *new* registration, so a fresh small-model registration gets a
+    # sane toolset without anyone remembering to flip a toggle. Existing
+    # rows are untouched: this only affects what a request that omits the
+    # field gets, not anything already stored.
+    tool_profile: str = "auto"
     enabled_tools: List[str] = Field(default_factory=list)
 
     _validate_id = field_validator("id")(_validate_registry_id)

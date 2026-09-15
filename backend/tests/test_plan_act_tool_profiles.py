@@ -105,3 +105,48 @@ class TestEnabledToolsOverride:
         mcp = next(tk for tk in flow.executor.toolkits if tk.name == "mcp")
         # It's the same object passed in, untouched.
         assert mcp is flow.executor.toolkits[[t.name for t in flow.executor.toolkits].index("mcp")]
+
+
+class TestMaxToolsBudget:
+    def test_budget_trims_tools_across_toolkits(self):
+        flow = make_flow(tool_profile="full", max_tools=3)
+        total = sum(
+            len(tk.get_tools()) for tk in flow.executor.toolkits if tk.name != "mcp"
+        )
+        assert total == 3
+
+    def test_budget_keeps_message_tools_first(self):
+        """message_notify_user/message_ask_user rank highest in TOOL_PRIORITY."""
+        flow = make_flow(tool_profile="lean", max_tools=2)
+        message = next(tk for tk in flow.executor.toolkits if tk.name == "message")
+        assert {t.name for t in message.get_tools()} == {"message_notify_user", "message_ask_user"}
+
+    def test_no_budget_is_unaffected(self):
+        flow = make_flow(tool_profile="full")
+        with_none = sum(
+            len(tk.get_tools()) for tk in flow.executor.toolkits if tk.name != "mcp"
+        )
+        flow_budgeted = make_flow(tool_profile="full", max_tools=None)
+        with_explicit_none = sum(
+            len(tk.get_tools()) for tk in flow_budgeted.executor.toolkits if tk.name != "mcp"
+        )
+        assert with_none == with_explicit_none
+
+    def test_mcp_is_exempt_from_the_budget(self):
+        """A tight max_tools must not touch the mcp toolkit's own tool list —
+        it is populated asynchronously after __init__ returns."""
+        flow = make_flow(tool_profile="full", max_tools=1)
+        mcp = next(tk for tk in flow.executor.toolkits if tk.name == "mcp")
+        assert mcp.get_tools() == []  # unchanged from the FakeMCPToolkit stub
+
+    def test_enabled_tools_overrides_max_tools(self):
+        """An explicit admin pick isn't further squeezed by the soft budget."""
+        flow = make_flow(
+            tool_profile="full",
+            enabled_tools=["shell_exec", "file_read", "file_write"],
+            max_tools=1,
+        )
+        total = sum(
+            len(tk.get_tools()) for tk in flow.executor.toolkits if tk.name != "mcp"
+        )
+        assert total == 3
