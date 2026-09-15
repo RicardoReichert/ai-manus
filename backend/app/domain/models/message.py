@@ -43,6 +43,10 @@ class LLMMessage(BaseModel):
     # persisted (excluded from model_dump).
     artifact: Optional[Any] = Field(default=None, exclude=True)
     additional_kwargs: Dict[str, Any] = Field(default_factory=dict)
+    # In-process marker for memory compaction (e.g. "plan_dump" — a USER
+    # message that supersedes every earlier one with the same tag). Never
+    # sent to the LLM or persisted; excluded from model_dump like artifact.
+    tag: Optional[str] = Field(default=None, exclude=True)
 
     @field_validator("content", mode="before")
     @classmethod
@@ -58,8 +62,13 @@ class LLMMessage(BaseModel):
         return cls(role=Role.SYSTEM, content=content, additional_kwargs=additional_kwargs or {})
 
     @classmethod
-    def user(cls, content: str, additional_kwargs: Optional[Dict[str, Any]] = None) -> "LLMMessage":
-        return cls(role=Role.USER, content=content, additional_kwargs=additional_kwargs or {})
+    def user(
+        cls,
+        content: str,
+        additional_kwargs: Optional[Dict[str, Any]] = None,
+        tag: Optional[str] = None,
+    ) -> "LLMMessage":
+        return cls(role=Role.USER, content=content, additional_kwargs=additional_kwargs or {}, tag=tag)
 
     @classmethod
     def assistant(
