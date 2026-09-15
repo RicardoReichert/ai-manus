@@ -19,10 +19,28 @@ from app.core.exceptions import AppException, ResourceNotFoundException, BadRequ
 # Set up logger
 logger = logging.getLogger(__name__)
 
+# Hard ceiling on accumulated shell output per session/console record.
+# Without this, a long-running or highly verbose command grows these
+# strings without bound — the backend agent's own truncation
+# (max_tool_result_chars) only trims what it receives per request, it can't
+# undo an already-multi-MB transfer over the wire. Keeping the most recent
+# output (not the oldest) matches how a live terminal scrollback behaves,
+# and is what matters for a still-running command's current state.
+MAX_SHELL_OUTPUT_CHARS = 200_000
+
+
+def _append_bounded(existing: str, new: str, limit: int = MAX_SHELL_OUTPUT_CHARS) -> str:
+    """Append ``new`` to ``existing``, keeping at most the last ``limit`` chars."""
+    combined = existing + new
+    if len(combined) <= limit:
+        return combined
+    return combined[-limit:]
+
+
 class ShellService:
     # Store active shell sessions
     active_shells: Dict[str, Dict[str, Any]] = {}
-    
+
     # Store shell tasks
     shell_tasks: Dict[str, ShellTask] = {}
 
@@ -75,10 +93,12 @@ class ShellService:
                     # Add output to shell session
                     shell = self.active_shells.get(session_id)
                     if shell:
-                        shell["output"] += output
+                        shell["output"] = _append_bounded(shell["output"], output)
                         # Update the output of the latest console record
                         if shell["console"]:
-                            shell["console"][-1].output += output
+                            shell["console"][-1].output = _append_bounded(
+                                shell["console"][-1].output, output
+                            )
                 except Exception as e:
                     logger.error(f"Error reading process output: {str(e)}", exc_info=True)
                     break
@@ -290,9 +310,11 @@ class ShellService:
             
             # Add input to output and console records
             input_str = input_data.decode('utf-8')
-            shell["output"] += input_str
+            shell["output"] = _append_bounded(shell["output"], input_str)
             if shell["console"]:
-                shell["console"][-1].output += input_str
+                shell["console"][-1].output = _append_bounded(
+                    shell["console"][-1].output, input_str
+                )
             
             # Asynchronously write input
             process.stdin.write(input_data)
