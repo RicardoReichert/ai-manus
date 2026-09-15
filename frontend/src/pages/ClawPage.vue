@@ -250,7 +250,7 @@
               :rows="1"
               dense
               :placeholder="t('Send message to Manus')"
-              :isRunning="false"
+              :isRunning="isWaitingResponse"
               :hideStopButton="true"
               :allowSendFilesOnly="true"
               @submit="handleSubmit"

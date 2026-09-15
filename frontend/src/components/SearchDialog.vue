@@ -103,6 +103,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { ListSessionItem } from '@/types/response';
+import { localeToIntlTag } from '@/utils/time';
 import { searchMessages, type SearchResultItem } from '@/api/search';
 
 const props = defineProps<{
@@ -225,7 +226,7 @@ const formatTime = (raw: number) => {
   const now = new Date();
   const today = startOfDay(now);
   const yesterday = today - 86400000;
-  const timeStr = d.toLocaleTimeString(locale.value === 'zh' ? 'zh-CN' : 'en-US', {
+  const timeStr = d.toLocaleTimeString(localeToIntlTag(locale.value), {
     hour: 'numeric',
     minute: '2-digit',
     hour12: false,
@@ -236,10 +237,10 @@ const formatTime = (raw: number) => {
 
   const weekAgo = today - 7 * 86400000;
   if (ts >= weekAgo) {
-    const weekday = d.toLocaleDateString(locale.value === 'zh' ? 'zh-CN' : 'en-US', { weekday: 'short' });
+    const weekday = d.toLocaleDateString(localeToIntlTag(locale.value), { weekday: 'short' });
     return `${weekday} ${timeStr}`;
   }
-  return d.toLocaleDateString(locale.value === 'zh' ? 'zh-CN' : 'en-US', {
+  return d.toLocaleDateString(localeToIntlTag(locale.value), {
     month: 'short',
     day: 'numeric',
   });

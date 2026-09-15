@@ -167,7 +167,7 @@
             :visible="showTakeControlBanner"
             @takeControl="handleTakeControl" />
           <ChatBox v-model="inputMessage" v-model:attachments="attachments" :rows="1" dense @submit="handleSubmit"
-            :isRunning="isBusy" @stop="handleStop" :placeholder="chatPlaceholder" />
+            :isRunning="isBusy" @stop="handleStop" :placeholder="chatPlaceholder" :hasPlanPanel="true" />
         </div>
       </div>
     </div>

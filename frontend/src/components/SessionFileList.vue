@@ -5,9 +5,6 @@
         <div role="dialog"
             class="bg-[var(--background-menu-white)] rounded-[20px] border border-white/5 fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 max-w-[95%] max-h-[95%] overflow-auto data-[state=open]:animate-dialog-slide-in-from-bottom data-[state=closed]:animate-dialog-slide-out-to-bottom h-[680px] flex flex-col"
             style="width: 600px;">
-            <div class="p-0">
-                <h3 class="text-[var(--text-primary)] text-[18px] leading-[24px] font-semibold flex items-center"></h3>
-            </div>
             <header class="flex items-center pt-6 pr-6 pl-6 pb-2.5">
                 <h1 class="flex-1 text-[var(--text-primary)] text-lg font-semibold">{{ $t('All Files in This Task') }}</h1>
                 <div class="flex items-center gap-4">
@@ -52,7 +49,7 @@
                 </div>
                 <div v-else class="flex-1 min-h-0 flex flex-col items-center justify-center gap-3">
                     <File />
-                    <p class="text-[var(--icon-tertiary)] text-[14px]">{{ $t('No Content') }}</p>
+                    <p class="text-[var(--icon-tertiary)] text-[14px]">{{ fetchError || $t('No Content') }}</p>
                 </div>
             </div>
         </div>
@@ -71,9 +68,12 @@ import { getFileType } from '../utils/fileType';
 import { useSessionFileList } from '../composables/useSessionFileList';
 import { useFilePreviewer } from '../composables/useFilePreviewer';
 import { eventBus } from '../utils/eventBus';
+import { useI18n } from 'vue-i18n';
 
 const route = useRoute();
+const { t } = useI18n();
 const files = ref<FileInfo[]>([]);
+const fetchError = ref('');
 
 const { showFilePreviewer } = useFilePreviewer();
 
@@ -83,9 +83,17 @@ const fetchFiles = async (sessionId: string) => {
     if (!sessionId) {
         return;
     }
-    files.value = shared.value
-        ? await getSharedSessionFiles(sessionId)
-        : await getSessionFiles(sessionId);
+    fetchError.value = '';
+    try {
+        files.value = shared.value
+            ? await getSharedSessionFiles(sessionId)
+            : await getSessionFiles(sessionId);
+    } catch (err: any) {
+        // Without this, a failing request left the modal permanently blank
+        // (files stays []) with no indication anything went wrong.
+        files.value = [];
+        fetchError.value = err?.response?.data?.msg || err?.message || t('Failed to load files');
+    }
 }
 
 const downloadFile = async (fileInfo: FileInfo) => {
