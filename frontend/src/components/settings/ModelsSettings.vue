@@ -120,7 +120,14 @@
         </FormField>
 
         <FormField :label="t('API key')" :hint="apiKeyHint">
-          <input v-model="form.api_key" type="password" class="settings-input" :placeholder="apiKeyPlaceholder" />
+          <input v-model="form.api_key" type="password" class="settings-input" :placeholder="apiKeyPlaceholder" :disabled="form.clearApiKey">
+          <label
+            v-if="editingModel?.has_api_key"
+            class="flex items-center gap-2 text-[13px] text-[var(--text-secondary)] cursor-pointer mt-1.5"
+          >
+            <input v-model="form.clearApiKey" type="checkbox" class="rounded">
+            {{ t('Remove stored API key') }}
+          </label>
         </FormField>
 
         <FormField :label="t('Description')" :hint="t('Shown under the model name in the dropdown. Leave empty to show nothing.')">
@@ -130,21 +137,21 @@
         <FormField :label="t('Tool profile')">
           <div class="flex gap-1.5">
             <button
-              v-for="profile in (['full', 'lean'] as const)"
+              v-for="profile in (['auto', 'full', 'lean'] as const)"
               :key="profile"
               type="button"
-              :title="profile === 'full' ? t('Full profile tooltip') : t('Lean profile tooltip')"
+              :title="PROFILE_TOOLTIP[profile]"
               class="h-8 px-3 rounded-[8px] text-[13px] font-medium clickable border"
               :class="form.tool_profile === profile
                 ? 'border-[var(--Button-black)] text-[var(--text-primary)]'
                 : 'border-[var(--Button-border-secondary)] text-[var(--text-secondary)] hover:bg-[var(--fill-tsp-white-light)]'"
               @click="onProfileChange(profile)"
             >
-              {{ profile === 'full' ? t('Full') : t('Lean') }}
+              {{ PROFILE_LABEL[profile] }}
             </button>
           </div>
           <p class="text-[11px] text-[var(--text-tertiary)]">
-            {{ form.tool_profile === 'full' ? t('Full profile tooltip') : t('Lean profile tooltip') }}
+            {{ PROFILE_TOOLTIP[form.tool_profile] }}
           </p>
         </FormField>
 
@@ -177,6 +184,28 @@
           </div>
         </FormField>
 
+        <template v-if="editingModel">
+          <FormField :label="t('Temperature override')" :hint="t('Temperature override hint')">
+            <input
+              :value="form.temperature"
+              class="settings-input"
+              placeholder="0.3"
+              inputmode="decimal"
+              @input="sanitizeTemperature"
+            >
+          </FormField>
+
+          <FormField :label="t('Request timeout override')" :hint="t('Request timeout override hint')">
+            <input
+              :value="form.requestTimeout"
+              class="settings-input"
+              placeholder="180"
+              inputmode="numeric"
+              @input="sanitizeRequestTimeout"
+            >
+          </FormField>
+        </template>
+
         <FormField v-if="editingModel" :label="t('Detected capabilities')" :hint="t('Auto-detected from the model name; only informational here.')">
           <div class="flex flex-wrap gap-1.5 text-[12px] text-[var(--text-secondary)]">
             <span class="px-2 py-1 rounded bg-[var(--fill-tsp-white-main)]">
@@ -190,6 +219,12 @@
             </span>
             <span class="px-2 py-1 rounded bg-[var(--fill-tsp-white-main)]">
               {{ editingModel.capabilities_auto_detected ? t('Auto-detected') : t('Manually set') }}
+            </span>
+            <span v-if="editingModel.capabilities.temperature != null" class="px-2 py-1 rounded bg-[var(--fill-tsp-white-main)]">
+              {{ t('Temperature {n}', { n: editingModel.capabilities.temperature }) }}
+            </span>
+            <span v-if="editingModel.capabilities.request_timeout != null" class="px-2 py-1 rounded bg-[var(--fill-tsp-white-main)]">
+              {{ t('Timeout {n}s', { n: editingModel.capabilities.request_timeout }) }}
             </span>
           </div>
         </FormField>
@@ -230,7 +265,7 @@ import { useI18n } from 'vue-i18n'
 import {
   listModelConfigs, createModelConfig, updateModelConfig, deleteModelConfig, testModelConnection,
   listAvailableTools, MODEL_PROVIDER_PRESETS, type ModelConfigEntry, type ModelProviderPreset,
-  type ToolProfile, type TestConnectionResult, type ToolInfo,
+  type ToolProfile, type TestConnectionResult, type ToolInfo, type ModelCapabilities,
 } from '@/api/modelConfig'
 import { useDialog } from '@/composables/useDialog'
 import { useActiveModel } from '@/composables/useActiveModel'
@@ -266,17 +301,53 @@ const form = reactive({
   model: '',
   base_url: '',
   api_key: '',
+  clearApiKey: false,
   enabled: true,
   is_local: false,
   provider: 'openai',
-  tool_profile: 'full' as ToolProfile,
+  tool_profile: 'auto' as ToolProfile,
   description: '',
+  // String, not number: no input in this codebase uses type="number" —
+  // every numeric-ish field is text + a sanitizing @input handler (see
+  // sanitizeId below for the existing pattern this follows). Blank means
+  // "inherit" (temperature) / "no timeout" (request_timeout).
+  temperature: '',
+  requestTimeout: '',
 })
+
+const PROFILE_LABEL = computed<Record<ToolProfile, string>>(() => ({
+  auto: t('Auto'),
+  full: t('Full'),
+  lean: t('Lean'),
+}))
+const PROFILE_TOOLTIP = computed<Record<ToolProfile, string>>(() => ({
+  auto: t('Auto profile tooltip'),
+  full: t('Full profile tooltip'),
+  lean: t('Lean profile tooltip'),
+}))
+
+// Mirrors the backend's domain/services/tools/profiles.py:resolve_profile —
+// 'auto' resolves to 'lean'/'full' from the model's own capabilities rather
+// than being a third static toolkit set. Client-side only, for seeding the
+// tool picker's preview; the backend resolves the real profile authoritatively
+// at model-load time from the capabilities actually stored for that model.
+function resolveEffectiveProfile(profile: ToolProfile, capabilities: ModelCapabilities | null): 'full' | 'lean' {
+  if (profile !== 'auto') return profile
+  const constrained = !!capabilities && (capabilities.max_tools != null || capabilities.needs_guided_decoding)
+  return constrained ? 'lean' : 'full'
+}
+
+function parseOptionalFloat(raw: string): number | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  const n = Number(trimmed)
+  return Number.isFinite(n) ? n : null
+}
 
 // Per-model tool picker (Perfil de ferramentas). Loaded once; independent of
 // which model is being created/edited.
 const availableTools = ref<ToolInfo[]>([])
-const toolProfileDefaults = ref<Record<ToolProfile, string[]>>({ full: [], lean: [] })
+const toolProfileDefaults = ref<Partial<Record<ToolProfile, string[]>>>({ full: [], lean: [] })
 const customizeTools = ref(false)
 const checkedTools = reactive(new Set<string>())
 
@@ -292,14 +363,20 @@ async function loadAvailableTools() {
 
 // Toolkits a given profile actually grants (mirrors the backend's
 // domain/services/tools/profiles.py): full gets the raw browser toolkit,
-// lean gets the single delegation tool instead — never both.
-const TOOLKITS_BY_PROFILE: Record<ToolProfile, string[]> = {
+// lean gets the single delegation tool instead — never both. 'auto' has no
+// entry of its own: it always resolves to one of these two first (see
+// resolveEffectiveProfile), so every lookup below goes through that.
+const TOOLKITS_BY_PROFILE: Record<'full' | 'lean', string[]> = {
   full: ['shell', 'browser', 'file', 'message', 'search'],
   lean: ['shell', 'delegation', 'file', 'message', 'search'],
 }
 
+const effectiveProfile = computed(() =>
+  resolveEffectiveProfile(form.tool_profile, editingModel.value?.capabilities ?? null)
+)
+
 const toolGroupsForCurrentProfile = computed(() => {
-  const allowedToolkits = TOOLKITS_BY_PROFILE[form.tool_profile]
+  const allowedToolkits = TOOLKITS_BY_PROFILE[effectiveProfile.value]
   const byToolkit = new Map<string, ToolInfo[]>()
   for (const tool of availableTools.value) {
     if (!allowedToolkits.includes(tool.toolkit)) continue
@@ -321,7 +398,7 @@ function toggleTool(name: string) {
 
 function seedCheckedToolsFromProfile() {
   checkedTools.clear()
-  for (const name of toolProfileDefaults.value[form.tool_profile] || []) {
+  for (const name of toolProfileDefaults.value[effectiveProfile.value] || []) {
     checkedTools.add(name)
   }
 }
@@ -338,7 +415,8 @@ function onProfileChange(profile: ToolProfile) {
   form.tool_profile = profile
   // A custom selection from the other profile could reference toolkits this
   // one doesn't grant (e.g. browser_* tools while switching into lean) —
-  // reseed from the new profile's own defaults instead of carrying it over.
+  // reseed from the new (resolved) profile's own defaults instead of
+  // carrying it over.
   if (customizeTools.value) {
     seedCheckedToolsFromProfile()
   }
@@ -378,11 +456,14 @@ function resetForm() {
   form.model = ''
   form.base_url = ''
   form.api_key = ''
+  form.clearApiKey = false
   form.enabled = true
   form.is_local = false
   form.provider = 'openai'
-  form.tool_profile = 'full'
+  form.tool_profile = 'auto'
   form.description = ''
+  form.temperature = ''
+  form.requestTimeout = ''
   formError.value = ''
   selectedPresetId.value = 'openai'
   customizeTools.value = false
@@ -405,6 +486,32 @@ function sanitizeId(event: Event) {
   form.id = sanitized
 }
 
+// Same live-sanitize pattern as sanitizeId above, applied to the two
+// numeric-ish capability overrides — this codebase has no type="number"
+// input anywhere, so a filtered text input is the established convention.
+function sanitizeTemperature(event: Event) {
+  const input = event.target as HTMLInputElement
+  let sanitized = input.value.replace(/[^0-9.]/g, '')
+  // Keep only the first decimal point typed.
+  const firstDot = sanitized.indexOf('.')
+  if (firstDot !== -1) {
+    sanitized = sanitized.slice(0, firstDot + 1) + sanitized.slice(firstDot + 1).replace(/\./g, '')
+  }
+  if (sanitized !== input.value) {
+    input.value = sanitized
+  }
+  form.temperature = sanitized
+}
+
+function sanitizeRequestTimeout(event: Event) {
+  const input = event.target as HTMLInputElement
+  const sanitized = input.value.replace(/[^0-9]/g, '')
+  if (sanitized !== input.value) {
+    input.value = sanitized
+  }
+  form.requestTimeout = sanitized
+}
+
 function applyPreset(preset: ModelProviderPreset) {
   selectedPresetId.value = preset.id
   form.provider = preset.provider
@@ -425,11 +532,14 @@ function openEditForm(m: ModelConfigEntry) {
   form.model = m.model
   form.base_url = m.base_url ?? ''
   form.api_key = ''
+  form.clearApiKey = false
   form.enabled = m.enabled
   form.is_local = m.is_local
   form.provider = m.provider
   form.tool_profile = m.tool_profile
   form.description = m.description ?? ''
+  form.temperature = m.capabilities.temperature != null ? String(m.capabilities.temperature) : ''
+  form.requestTimeout = m.capabilities.request_timeout != null ? String(m.capabilities.request_timeout) : ''
   formError.value = ''
   customizeTools.value = m.enabled_tools.length > 0
   checkedTools.clear()
@@ -443,6 +553,18 @@ function closeForm() {
 
 async function handleSave() {
   formError.value = ''
+
+  const parsedTemperature = parseOptionalFloat(form.temperature)
+  const parsedRequestTimeout = parseOptionalFloat(form.requestTimeout)
+  if (parsedTemperature !== null && (parsedTemperature < 0 || parsedTemperature > 2)) {
+    formError.value = t('Temperature must be between 0 and 2.')
+    return
+  }
+  if (parsedRequestTimeout !== null && parsedRequestTimeout <= 0) {
+    formError.value = t('Request timeout must be a positive number of seconds.')
+    return
+  }
+
   isSaving.value = true
   // Empty list means "use the profile's default set" (backend contract, see
   // domain/services/tools/profiles.py) — only send an explicit list when the
@@ -450,17 +572,36 @@ async function handleSave() {
   const enabled_tools = customizeTools.value ? Array.from(checkedTools) : []
   try {
     if (editingId.value) {
+      // capabilities is only ever included when an override actually
+      // changed — omitting it lets the backend's own auto-redetect-on-
+      // rename behavior fire normally (model_config_routes.py), and
+      // including it always sends the *complete* object (see the type's
+      // own comment in api/modelConfig.ts): a partial one would silently
+      // reset every other capability to its schema default.
+      let capabilities: ModelCapabilities | undefined
+      if (editingModel.value) {
+        const current = editingModel.value.capabilities
+        if (parsedTemperature !== current.temperature || parsedRequestTimeout !== current.request_timeout) {
+          capabilities = { ...current, temperature: parsedTemperature, request_timeout: parsedRequestTimeout }
+        }
+      }
       await updateModelConfig(editingId.value, {
         name: form.name,
         model: form.model,
         base_url: form.base_url || null,
-        api_key: form.api_key || undefined,
+        // Mutually exclusive with the backend's own contract: clear_api_key
+        // wins when checked, so a stray leftover api_key value (there
+        // shouldn't be one, since the field is disabled while checked) can
+        // never un-clear it.
+        api_key: form.clearApiKey ? undefined : (form.api_key || undefined),
+        clear_api_key: form.clearApiKey,
         enabled: form.enabled,
         is_local: form.is_local,
         provider: form.provider,
         tool_profile: form.tool_profile,
         description: form.description || null,
         enabled_tools,
+        capabilities,
       })
       showSuccessToast(t('Model updated'))
     } else {

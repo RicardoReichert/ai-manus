@@ -11,9 +11,11 @@ export interface ModelCapabilities {
   max_output_tokens: number | null
   supports_parallel_tool_calls: boolean
   strip_thinking_from_history: boolean
+  temperature: number | null
+  request_timeout: number | null
 }
 
-export type ToolProfile = 'full' | 'lean'
+export type ToolProfile = 'full' | 'lean' | 'auto'
 
 export interface ModelConfigEntry {
   id: string
@@ -34,6 +36,14 @@ export interface ModelConfigEntry {
   has_api_key: boolean
 }
 
+// The backend replaces `capabilities` wholesale when present in a request
+// (it does not merge field-by-field) — see model_config_routes.py's create
+// and update handlers. A caller that wants to change just one field (e.g.
+// temperature) must therefore always send the *complete* current object
+// with that field overridden, never a partial one, or every other
+// capability (max_tools, context_window, ...) silently resets to its schema
+// default. `ModelsSettings.vue` only ever builds this by spreading the
+// currently-loaded model's own `capabilities`.
 export interface CreateModelConfigInput {
   id: string
   name: string
@@ -45,6 +55,7 @@ export interface CreateModelConfigInput {
   description?: string | null
   enabled?: boolean
   sort_order?: number
+  capabilities?: ModelCapabilities | null
   tool_profile?: ToolProfile
   enabled_tools?: string[]
 }
@@ -55,10 +66,12 @@ export interface UpdateModelConfigInput {
   model?: string
   base_url?: string | null
   api_key?: string | null
+  clear_api_key?: boolean
   is_local?: boolean
   description?: string | null
   enabled?: boolean
   sort_order?: number
+  capabilities?: ModelCapabilities | null
   tool_profile?: ToolProfile
   enabled_tools?: string[]
 }
@@ -78,8 +91,11 @@ export interface ToolInfo {
 export interface AvailableTools {
   tools: ToolInfo[]
   // profile name -> tool names selected by that profile with no admin
-  // override — what the picker starts pre-checked as.
-  profiles: Record<ToolProfile, string[]>
+  // override — what the picker starts pre-checked as. The backend only ever
+  // returns 'full'/'lean' keys — 'auto' resolves to one of those per-model
+  // from its own capabilities, so it is never a key here (see
+  // resolveEffectiveProfile in ModelsSettings.vue).
+  profiles: Partial<Record<ToolProfile, string[]>>
 }
 
 export async function listModelConfigs(): Promise<ModelConfigEntry[]> {
