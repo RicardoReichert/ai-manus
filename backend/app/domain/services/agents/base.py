@@ -1,8 +1,11 @@
+import json
 import logging
 import asyncio
+import re
 import uuid
 from abc import ABC
 from typing import Any, List, Literal, Optional, AsyncGenerator
+from app.domain.models.memory import estimate_tokens
 from app.domain.models.message import Message, LLMMessage, Role, ToolCall
 from app.domain.services.tools.base import BaseToolkit, OutputTool, Tool, ValidationError
 from app.domain.models.event import (
@@ -43,10 +46,30 @@ class BaseAgent(ABC):
     max_retries: int = 3
     retry_interval: float = 1.0
     tool_choice: Optional[str] = None
-    # Context engineering budgets: tool results are truncated at ingestion,
-    # and memory is compacted before each model call when over budget.
-    max_tool_result_chars: int = 16000
+    # Context engineering budgets: tool results are truncated at ingestion
+    # (max_tool_result_chars, scaled by context window — see the property
+    # below), and memory is compacted before each model call when over
+    # budget (effective_context_tokens).
     max_context_tokens: int = 100000
+    # effective_context_tokens floor/reserve knobs — see that property.
+    min_context_tokens: int = 2000
+    default_output_reserve_tokens: int = 4096
+    context_safety_margin_tokens: int = 1000
+    # max_tool_result_chars floor/ceiling/scale — see that property. A
+    # single result at the ceiling (16000 chars ≈ 4k tokens) is already
+    # ~17% of a 32K window; scaling down for small windows keeps one big
+    # shell/browser dump from dominating a small model's whole budget.
+    min_tool_result_chars: int = 2000
+    max_tool_result_chars_ceiling: int = 16000
+    tool_result_char_fraction_of_window: float = 0.05
+    # A structured run nudges the model to call the output tool when it
+    # answers in plain text instead. Past this many consecutive nudges, the
+    # step fails cleanly instead of silently burning the rest of
+    # max_iterations on a model that isn't going to comply (e.g. one that
+    # keeps re-emitting the call as prose/markdown rather than a native
+    # tool_call — see robust_json_parser's text-recovery stage, which
+    # prevents most of these from ever reaching this counter).
+    max_consecutive_no_tool_call_nudges: int = 3
 
     def __init__(
         self,
@@ -104,14 +127,40 @@ class BaseAgent(ABC):
             schemas.append(self._output_tool.to_openai_schema())
         return schemas
 
+    @property
+    def max_tool_result_chars(self) -> int:
+        """Cap on a single tool result before it enters memory.
+
+        Scaled to the model's context window (chars-per-token ratio matches
+        Memory's own estimator) rather than a flat constant, so a 32K local
+        model isn't handed the same 16000-char allowance as a 1M-context one
+        — the ceiling below is exactly today's unchanged behavior for any
+        model with no known window.
+        """
+        window = self.capabilities.context_window
+        if not window:
+            return self.max_tool_result_chars_ceiling
+        chars_per_token = 4
+        scaled = int(window * self.tool_result_char_fraction_of_window * chars_per_token)
+        return max(self.min_tool_result_chars, min(self.max_tool_result_chars_ceiling, scaled))
+
     def _truncate_tool_result(self, content: str) -> str:
-        """Cap a tool result before it enters memory, to bound context growth."""
-        if len(content) <= self.max_tool_result_chars:
+        """Cap a tool result before it enters memory, to bound context growth.
+
+        Keeps a head *and* a tail slice rather than only the head: a shell
+        command's error or final result is usually at the end of its
+        output, and a head-only cap would silently discard exactly that.
+        """
+        limit = self.max_tool_result_chars
+        if len(content) <= limit:
             return content
-        omitted = len(content) - self.max_tool_result_chars
+        omitted = len(content) - limit
+        head_chars = limit * 2 // 3
+        tail_chars = limit - head_chars
         return (
-            content[: self.max_tool_result_chars]
-            + f"... [truncated {omitted} chars to save context]"
+            content[:head_chars]
+            + f"\n... [{omitted} chars truncated to save context] ...\n"
+            + content[-tail_chars:]
         )
 
     async def invoke_tool(self, tool: Tool, tool_call: ToolCall) -> LLMMessage:
@@ -172,6 +221,7 @@ class BaseAgent(ABC):
         self,
         request: str,
         output_tool: Optional[OutputTool] = None,
+        request_tag: Optional[str] = None,
     ) -> AsyncGenerator[BaseEvent, None]:
         """Run the agent loop.
 
@@ -179,16 +229,36 @@ class BaseAgent(ABC):
         provided, the loop finishes when the model calls it with valid
         arguments, yielding a :class:`StructuredOutputEvent`. Otherwise a
         plain assistant message ends the loop with a :class:`MessageEvent`.
+
+        ``request_tag`` marks the initial request message for compaction
+        (see :attr:`~app.domain.models.message.LLMMessage.tag` and
+        :meth:`~app.domain.models.memory.Memory.compact`) — e.g. the
+        planner's full plan-JSON dump, which fully supersedes every earlier
+        one. It is never applied to the later output-tool nudge messages.
         """
         self._output_tool = output_tool
+        no_tool_call_streak = 0
         try:
-            message = await self.ask(request)
+            message = await self.ask(request, tag=request_tag)
             for _ in range(self.max_iterations):
                 if not message.tool_calls:
                     # Plain message: final answer for unstructured runs; for
                     # structured runs, nudge the model to use the output tool.
                     if not output_tool:
                         break
+                    no_tool_call_streak += 1
+                    if no_tool_call_streak > self.max_consecutive_no_tool_call_nudges:
+                        # A bounded, legible failure instead of exhausting
+                        # max_iterations on a model that isn't going to
+                        # comply — see the class attribute's docstring.
+                        yield ErrorEvent(
+                            error=(
+                                f"Model did not call `{output_tool.name}` after "
+                                f"{no_tool_call_streak - 1} nudges; giving up on "
+                                "this step instead of exhausting the iteration budget."
+                            )
+                        )
+                        return
                     # A model that needs guided decoding tends to answer in
                     # prose instead of calling the tool, and a plain nudge
                     # just burns iterations. Forcing a tool call converts an
@@ -199,6 +269,7 @@ class BaseAgent(ABC):
                         tool_choice=forced,
                     )
                     continue
+                no_tool_call_streak = 0
 
                 tool_responses = []
                 structured_output: Optional[Any] = None
@@ -337,11 +408,33 @@ class BaseAgent(ABC):
         if not self.memory:
             self.memory = await self._repository.get_memory(self._agent_id, self.name)
     
+    # Matches both <think>...</think> and <thinking>...</thinking>, either
+    # tag spelling, so this covers models using either convention.
+    _THINK_BLOCK_RE = re.compile(r"<think(?:ing)?>.*?</think(?:ing)?>", re.IGNORECASE | re.DOTALL)
+
+    def _strip_thinking(self, message: LLMMessage) -> LLMMessage:
+        """Drop prior reasoning blocks from a plain assistant turn's content.
+
+        Only applies when ``capabilities.strip_thinking_from_history`` is
+        set (Gemma 4 documents this explicitly) and only to turns with *no*
+        tool calls — Gemma 4's own documentation calls out that thinking on
+        tool-call turns must be preserved, since dropping it there
+        measurably hurts tool-call quality.
+        """
+        if message.role != Role.ASSISTANT or message.tool_calls or not message.content:
+            return message
+        stripped = self._THINK_BLOCK_RE.sub("", message.content).strip()
+        if stripped != message.content:
+            message.content = stripped
+        return message
+
     async def _add_to_memory(self, messages: List[LLMMessage]) -> None:
         """Update memory and save to repository"""
         await self._ensure_memory()
         if self.memory.empty:
             self.memory.add_message(LLMMessage.system(self.build_system_prompt()))
+        if self.capabilities.strip_thinking_from_history:
+            messages = [self._strip_thinking(m) for m in messages]
         self.memory.add_messages(messages)
         await self._repository.save_memory(self._agent_id, self.name, self.memory)
     
@@ -365,14 +458,21 @@ class BaseAgent(ABC):
     def effective_context_tokens(self) -> int:
         """Compaction budget for this model.
 
-        A 32K local model would otherwise be handed the 100K class default and
-        overflow. Reserve headroom for the reply and the tool schemas rather
-        than compacting exactly at the window edge.
+        Built by construction — window minus what actually has to share it
+        — rather than a flat fraction: the tool schemas sent on *every* call
+        were previously uncounted entirely (they can be ~3k tokens on their
+        own for a small model's full toolset), and the model's own reply
+        needs headroom too. A 32K local model would otherwise be handed the
+        100K class default and overflow.
         """
         window = self.capabilities.context_window
         if not window:
             return self.max_context_tokens
-        return min(self.max_context_tokens, int(window * 0.75))
+
+        schema_tokens = estimate_tokens(json.dumps(self.get_tool_schemas(), default=str))
+        output_reserve = self.capabilities.max_output_tokens or self.default_output_reserve_tokens
+        budget = window - schema_tokens - output_reserve - self.context_safety_margin_tokens
+        return min(self.max_context_tokens, max(self.min_context_tokens, budget))
 
     async def ask_with_messages(
         self,
@@ -396,12 +496,30 @@ class BaseAgent(ABC):
         )
         logger.debug(f"Response from model: {message}")
 
+        if not self.capabilities.supports_parallel_tool_calls and len(message.tool_calls) > 1:
+            # Defensive: the gateway already asks the provider not to emit
+            # more than one (see langchain_llm._parallel_tool_calls_kwargs),
+            # but a local model can ignore that hint. Keeping only the first
+            # here, before it enters memory, is what actually enforces the
+            # capability regardless of provider.
+            logger.debug(
+                "Model capabilities disallow parallel tool calls; keeping only "
+                "the first of %d returned by this turn.",
+                len(message.tool_calls),
+            )
+            message.tool_calls = message.tool_calls[:1]
+
         await self._add_to_memory([message])
         return message
 
-    async def ask(self, request: str, tool_choice: Optional[str] = None) -> LLMMessage:
+    async def ask(
+        self,
+        request: str,
+        tool_choice: Optional[str] = None,
+        tag: Optional[str] = None,
+    ) -> LLMMessage:
         return await self.ask_with_messages(
-            [LLMMessage.user(request)],
+            [LLMMessage.user(request, tag=tag)],
             tool_choice=tool_choice,
         )
     

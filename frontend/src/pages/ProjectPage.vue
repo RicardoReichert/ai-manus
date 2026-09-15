@@ -157,7 +157,7 @@
                   :projects="projectsList"
                   @deleted="handleSessionDeleted"
                   @renamed="handleSessionRenamed"
-                  @shared="noop"
+                  @shared="handleSessionShared"
                   @favorited="handleSessionFavorited"
                   @pinned="handleSessionPinned"
                   @moved="handleSessionMoved"
@@ -282,8 +282,6 @@ const updatedLabel = computed(() => {
 const instructionPlaceholder = computed(() =>
   t('Keep responses concise and professional.\nUse our brand voice from the attached guidelines.\nAlways provide sources for important conclusions.\nNever publish without approval.'),
 )
-
-const noop = () => {}
 
 const closeMenus = () => {
   showMoreMenu.value = false
@@ -443,6 +441,12 @@ const handleSessionRenamed = (sessionId: string, title: string) => {
 const handleSessionFavorited = (sessionId: string, isFavorite: boolean) => {
   sessions.value = sessions.value.map((s) =>
     s.session_id === sessionId ? { ...s, is_favorite: isFavorite } : s,
+  )
+}
+
+const handleSessionShared = (sessionId: string) => {
+  sessions.value = sessions.value.map((s) =>
+    s.session_id === sessionId ? { ...s, is_shared: true } : s,
   )
 }
 

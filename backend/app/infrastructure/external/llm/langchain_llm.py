@@ -37,6 +37,38 @@ logger = logging.getLogger(__name__)
 _INHERIT_API_BASE = object()
 
 
+def _tool_names(tools: Optional[List[Dict[str, Any]]]) -> List[str]:
+    """Extract ``function.name`` from each OpenAI-shaped tool schema.
+
+    Feeds ``RobustJsonParser``'s stage-0 text-recovery, which only promotes
+    a recovered call whose name was actually offered this turn.
+    """
+    if not tools:
+        return []
+    names = []
+    for t in tools:
+        name = (t.get("function") or {}).get("name") if isinstance(t, dict) else None
+        if name:
+            names.append(name)
+    return names
+
+
+def _parallel_tool_calls_kwargs(capabilities: ModelCapabilities, provider: Optional[str]) -> Dict[str, Any]:
+    """``bind_tools()`` kwargs enforcing ``supports_parallel_tool_calls=False``.
+
+    Only the OpenAI-compatible ``bind_tools()`` signature is known to accept
+    ``parallel_tool_calls`` across the providers ``init_chat_model`` supports;
+    other providers could error on an unrecognized bind kwarg, so this stays
+    scoped to where local models are actually routed (``provider="openai"``
+    with a ``base_url`` override, e.g. LM Studio). ``base.py``'s execute loop
+    also defensively keeps only the first tool call for these models,
+    regardless of provider, in case the model ignores this hint anyway.
+    """
+    if not capabilities.supports_parallel_tool_calls and provider == "openai":
+        return {"parallel_tool_calls": False}
+    return {}
+
+
 def _sanitize_json_schema(node: Any, *, properties_depth: int = 0) -> Any:
     """Recursively rewrite a tool JSON Schema into a shape every provider's
     schema-to-grammar compiler can handle.
@@ -137,6 +169,7 @@ class LangchainLLM:
 
         target_model = model_name or settings.model_name
         target_provider = model_provider or settings.model_provider
+        self._provider = target_provider
         target_base_url = settings.api_base if base_url is _INHERIT_API_BASE else base_url
         # The global API_KEY is only for the bare default gateway (no model
         # named). A registry-resolved model (model_name/model_provider given)
@@ -151,7 +184,13 @@ class LangchainLLM:
         kwargs: Dict[str, Any] = dict(
             model=target_model,
             model_provider=target_provider,
-            temperature=settings.temperature,
+            # A local/small model tends to need a lower temperature for
+            # reliable tool calling than a hosted frontier default.
+            temperature=(
+                self.capabilities.temperature
+                if self.capabilities.temperature is not None
+                else settings.temperature
+            ),
             # A small model's own output limit is lower than the global
             # default; exceeding it is a hard provider error, not a truncation.
             max_tokens=self.capabilities.max_output_tokens or settings.max_tokens,
@@ -162,6 +201,12 @@ class LangchainLLM:
             kwargs["api_key"] = target_api_key
         if settings.extra_headers:
             kwargs["default_headers"] = settings.extra_headers
+        if self.capabilities.request_timeout is not None:
+            # "timeout" is the cross-provider alias LangChain's chat model
+            # constructors accept (e.g. ChatOpenAI's `request_timeout` field).
+            # There is otherwise no client-side timeout anywhere in this call
+            # chain, so a hung local endpoint would block the session forever.
+            kwargs["timeout"] = self.capabilities.request_timeout
         self._model = init_chat_model(**kwargs)
 
         self._json_output_parser = RetryWithErrorOutputParser.from_llm(
@@ -271,12 +316,15 @@ class LangchainLLM:
             bind_kwargs["tool_choice"] = tool_choice
         model = self._model.bind(**bind_kwargs) if bind_kwargs else self._model
         if tools:
-            model = model.bind_tools(_sanitize_json_schema(tools))
+            bind_tools_kwargs = _parallel_tool_calls_kwargs(self.capabilities, self._provider)
+            model = model.bind_tools(_sanitize_json_schema(tools), **bind_tools_kwargs)
 
+        # Stage 0: recovers a tool call a model emitted as text instead of
+        # the native channel (known_tools validates the recovered name).
         # Stages 1-3: RobustJsonParser repairs invalid tool call JSON locally
         # and via a cheap fixing call. Stages 4-5: this outer loop retries the
         # model, silently first then with error feedback.
-        chain = model | RobustJsonParser.from_llm(self._model)
+        chain = model | RobustJsonParser.from_llm(self._model, known_tools=_tool_names(tools))
 
         context = self._to_langchain(messages)
         message: Optional[AIMessage] = None

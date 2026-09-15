@@ -29,7 +29,7 @@ from app.domain.services.tools.file import FileToolkit
 from app.domain.services.tools.message import MessageToolkit
 from app.domain.services.tools.search import SearchToolkit
 from app.domain.services.tools.delegation import DelegationToolkit
-from app.domain.services.tools.profiles import toolkits_for_profile
+from app.domain.services.tools.profiles import toolkits_for_profile, select_tool_names
 from app.domain.services.agents.web import WebAgent
 
 logger = logging.getLogger(__name__)
@@ -57,6 +57,7 @@ class PlanActFlow(BaseFlow):
         project_repository: Optional[ProjectRepository] = None,
         tool_profile: str = "full",
         enabled_tools: Optional[List[str]] = None,
+        max_tools: Optional[int] = None,
     ):
         self._agent_id = agent_id
         self._repository = agent_repository
@@ -103,20 +104,33 @@ class PlanActFlow(BaseFlow):
                 )
                 tools.append(DelegationToolkit(web_agent))
 
-        # enabled_tools narrows within the resolved toolkits — an admin
-        # unchecking one tool must not resurrect a toolkit the profile itself
-        # excluded (see domain/services/tools/profiles.py:select_tool_names
-        # for the equivalent pure-function contract this mirrors).
-        if enabled_tools:
-            allow = set(enabled_tools)
-            for toolkit in tools:
-                if toolkit.name == "mcp":
-                    # MCP tools are discovered asynchronously after this
-                    # constructor returns (MCPToolkit.initialized()), so
-                    # filtering here would just be overwritten later. MCP
-                    # access is already opt-in per-deployment via mcp.json.
-                    continue
-                toolkit.tools = [t for t in toolkit.get_tools() if t.name in allow]
+        # enabled_tools narrows within the resolved toolkits, and max_tools
+        # trims the profile's own default set when the admin hasn't picked
+        # explicit tools — both go through select_tool_names, the single
+        # source of truth for "which tool names survive a profile" (this
+        # used to be a bespoke filter duplicating that function's contract;
+        # see domain/services/tools/profiles.py). mcp is excluded from the
+        # dict below (not merely skipped in the loop), so it is never a
+        # candidate for either enabled_tools or max_tools: its tools are
+        # discovered asynchronously after this constructor returns
+        # (MCPToolkit.initialized()), so filtering here would just be
+        # overwritten later, and MCP access is already opt-in per-deployment
+        # via mcp.json.
+        toolkits_by_name = {toolkit.name: toolkit for toolkit in tools if toolkit.name != "mcp"}
+        available_by_toolkit = {
+            name: [t.name for t in toolkit.get_tools()]
+            for name, toolkit in toolkits_by_name.items()
+        }
+        allowed_names = set(
+            select_tool_names(
+                available_by_toolkit,
+                tool_profile,
+                enabled_tools=enabled_tools,
+                max_tools=max_tools,
+            )
+        )
+        for toolkit in toolkits_by_name.values():
+            toolkit.tools = [t for t in toolkit.get_tools() if t.name in allowed_names]
 
         # Create planner and execution agents. The planner only receives a
         # compact capability overview instead of full tool schemas.

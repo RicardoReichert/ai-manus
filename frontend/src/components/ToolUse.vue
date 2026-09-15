@@ -29,7 +29,7 @@
         type="button"
         class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--icon-tertiary)] hover:bg-[var(--fill-tsp-white-light)] hover:text-[var(--text-primary)]"
         :aria-expanded="isArgsExpanded"
-        :title="t('Copy parameters')"
+        :title="isArgsExpanded ? t('Collapse') : t('Expand')"
         @click.stop="isArgsExpanded = !isArgsExpanded">
         <ChevronDown class="transition-transform duration-150" :class="{ 'rotate-180': isArgsExpanded }" :size="14" />
       </button>

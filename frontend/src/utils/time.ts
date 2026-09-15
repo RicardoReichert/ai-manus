@@ -4,6 +4,18 @@ import { useI18n } from 'vue-i18n';
  * Time related utility functions
  */
 
+/**
+ * Map an app locale code to a BCP-47 tag for Intl/toLocale* APIs. Every
+ * caller of this used to hard-code `locale === 'zh' ? 'zh-CN' : 'en-US'`,
+ * silently falling Portuguese through to English formatting — 'pt' is the
+ * first option in locales/index.ts and gets auto-selected for pt-* browsers.
+ */
+export const localeToIntlTag = (locale?: string): string => {
+  if (locale?.startsWith('zh')) return 'zh-CN';
+  if (locale?.startsWith('pt')) return 'pt-BR';
+  return 'en-US';
+};
+
 
 /**
  * Convert ISO 8601 datetime string to timestamp number
@@ -69,8 +81,7 @@ export const formatCustomTime = (timestamp: number, t?: (key: string) => string,
   const isToday = date.toDateString() === now.toDateString();
   if (isToday) {
     // Use locale-appropriate time format
-    const timeFormat = locale?.startsWith('zh') ? 'zh-CN' : 'en-US';
-    return date.toLocaleTimeString(timeFormat, {
+    return date.toLocaleTimeString(localeToIntlTag(locale), {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false
@@ -98,13 +109,8 @@ export const formatCustomTime = (timestamp: number, t?: (key: string) => string,
   // Check if it's this year
   const isThisYear = date.getFullYear() === now.getFullYear();
   if (isThisYear) {
-    // Use locale-appropriate date format
-    if (locale?.startsWith('zh')) {
-      return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
-    } else {
-      // For English and other locales, use MM/DD format
-      return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
-    }
+    // MM/DD — every supported locale currently uses the same short form here.
+    return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
   }
   
   // Other years: show year/month

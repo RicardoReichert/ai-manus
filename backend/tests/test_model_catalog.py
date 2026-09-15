@@ -116,3 +116,42 @@ class TestSizeInference:
     def test_size_inference_does_not_count_as_catalogued(self):
         """It is a heuristic, so the UI must not claim auto-detection."""
         assert is_known_model("mistral-7b-instruct") is False
+
+
+class TestSmallModelTemperatureAndTimeout:
+    """A 9B-class local model needs a lower sampling temperature and a
+    timeout — the historical no-timeout behavior is only safe for hosted
+    frontier models that don't hang under normal operation."""
+
+    def test_catalogued_small_models_get_a_lowered_temperature(self):
+        for model in ("qwen3-4b", "gemma-4-e4b-it", "phi-4-mini"):
+            caps = lookup_capabilities(model)
+            assert caps.temperature is not None and caps.temperature < 0.7, model
+
+    def test_catalogued_small_models_get_a_request_timeout(self):
+        for model in ("qwen3-4b", "gemma-4-e4b-it", "phi-4-mini"):
+            assert lookup_capabilities(model).request_timeout is not None, model
+
+    def test_size_inferred_small_model_gets_temperature_and_timeout(self):
+        caps = lookup_capabilities("mistral-7b-instruct")
+        assert caps.temperature is not None
+        assert caps.request_timeout is not None
+
+    def test_size_inferred_large_model_keeps_no_temperature_override(self):
+        """A local 70B is capable enough to use the global default."""
+        caps = lookup_capabilities("llama-3.1-70b")
+        assert caps.temperature is None
+        assert caps.request_timeout is None
+
+    def test_unknown_local_endpoint_gets_temperature_and_timeout(self):
+        caps = lookup_capabilities("some-bespoke-local-finetune", is_local=True)
+        assert caps.temperature is not None
+        assert caps.request_timeout is not None
+
+    def test_unknown_hosted_model_keeps_full_capability_unaffected(self):
+        """No regression: an unrecognized hosted model must stay identical
+        to the system's pre-capabilities behavior."""
+        caps = lookup_capabilities("some-bespoke-finetune-v3")
+        assert caps == ModelCapabilities()
+        assert caps.temperature is None
+        assert caps.request_timeout is None

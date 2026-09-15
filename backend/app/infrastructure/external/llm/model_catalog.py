@@ -32,6 +32,15 @@ logger = logging.getLogger(__name__)
 # output tool while staying under the documented degradation threshold.
 _SMALL_MODEL_TOOL_BUDGET = 8
 
+# Small/local models degrade on tool-calling reliability at hosted-frontier
+# sampling temperatures; empirically observed as a retry loop where the model
+# repeats a tool call as prose instead of using the native tool-call channel.
+# 180s is generous enough to tolerate a cold local-model load (LM Studio /
+# Ollama can take tens of seconds to page a model in) while still failing a
+# genuinely hung request instead of blocking the session forever.
+_SMALL_MODEL_TEMPERATURE = 0.3
+_SMALL_MODEL_REQUEST_TIMEOUT = 180.0
+
 # Unknown *local* models are assumed small: someone pointing at LM Studio or
 # Ollama is usually running a quantized 4-14B, and being wrong in this
 # direction costs a little capability, while being wrong the other way makes
@@ -42,6 +51,8 @@ _UNKNOWN_LOCAL = ModelCapabilities(
     max_tools=_SMALL_MODEL_TOOL_BUDGET,
     context_window=32000,
     supports_parallel_tool_calls=False,
+    temperature=_SMALL_MODEL_TEMPERATURE,
+    request_timeout=_SMALL_MODEL_REQUEST_TIMEOUT,
 )
 
 # (regex over the normalized model name, capabilities)
@@ -56,6 +67,8 @@ _CATALOG: List[Tuple[re.Pattern, ModelCapabilities]] = [
             max_tools=_SMALL_MODEL_TOOL_BUDGET,
             context_window=262144,
             supports_parallel_tool_calls=True,
+            temperature=_SMALL_MODEL_TEMPERATURE,
+            request_timeout=_SMALL_MODEL_REQUEST_TIMEOUT,
         ),
     ),
     (
@@ -67,6 +80,8 @@ _CATALOG: List[Tuple[re.Pattern, ModelCapabilities]] = [
             context_window=128000,
             supports_parallel_tool_calls=False,
             strip_thinking_from_history=True,
+            temperature=_SMALL_MODEL_TEMPERATURE,
+            request_timeout=_SMALL_MODEL_REQUEST_TIMEOUT,
         ),
     ),
     (
@@ -77,6 +92,8 @@ _CATALOG: List[Tuple[re.Pattern, ModelCapabilities]] = [
             max_tools=_SMALL_MODEL_TOOL_BUDGET,
             context_window=32000,
             supports_parallel_tool_calls=False,
+            temperature=_SMALL_MODEL_TEMPERATURE,
+            request_timeout=_SMALL_MODEL_REQUEST_TIMEOUT,
         ),
     ),
     (
@@ -87,6 +104,8 @@ _CATALOG: List[Tuple[re.Pattern, ModelCapabilities]] = [
             max_tools=_SMALL_MODEL_TOOL_BUDGET,
             context_window=128000,
             supports_parallel_tool_calls=False,
+            temperature=_SMALL_MODEL_TEMPERATURE,
+            request_timeout=_SMALL_MODEL_REQUEST_TIMEOUT,
         ),
     ),
     # NOTE: generic parameter-size detection is handled separately in
@@ -170,6 +189,8 @@ def _size_based_capabilities(name: str) -> Optional[ModelCapabilities]:
         max_tools=_SMALL_MODEL_TOOL_BUDGET,
         context_window=32000,
         supports_parallel_tool_calls=False,
+        temperature=_SMALL_MODEL_TEMPERATURE,
+        request_timeout=_SMALL_MODEL_REQUEST_TIMEOUT,
     )
 
 

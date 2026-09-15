@@ -32,10 +32,13 @@ export const TOOL_FUNCTION_MAP: {[key: string]: string} = {
   
   // Search tools
   "info_search_web": "Searching web",
-  
+
   // Message tools
   "message_notify_user": "Sending notification",
-  "message_ask_user": "Asking question"
+  "message_ask_user": "Asking question",
+
+  // Delegation tool (Lean tool profile — stands in for the whole browser toolkit)
+  "browse_web": "Browsing web"
 };
 
 /**
@@ -43,30 +46,31 @@ export const TOOL_FUNCTION_MAP: {[key: string]: string} = {
  */
 export const TOOL_FUNCTION_ARG_MAP: {[key: string]: string} = {
   "shell_exec": "command",
-  "shell_view": "shell",
-  "shell_wait": "shell",
+  "shell_view": "id",
+  "shell_wait": "id",
   "shell_write_to_process": "input",
-  "shell_kill_process": "shell",
+  "shell_kill_process": "id",
   "file_read": "file",
   "file_write": "file",
   "file_str_replace": "file",
   "file_find_in_content": "file",
   "file_find_by_name": "path",
-  "browser_view": "page",
   "browser_navigate": "url",
   "browser_restart": "url",
-  "browser_click": "element",
+  "browser_click": "index",
   "browser_input": "text",
-  "browser_move_mouse": "position",
+  "browser_move_mouse": "coordinate_x",
   "browser_press_key": "key",
   "browser_select_option": "option",
-  "browser_scroll_up": "page",
-  "browser_scroll_down": "page",
-  "browser_console_exec": "code",
-  "browser_console_view": "console",
+  "browser_scroll_up": "to_top",
+  "browser_scroll_down": "to_bottom",
+  "browser_console_exec": "javascript",
+  "browser_console_view": "max_lines",
   "info_search_web": "query",
-  "message_notify_user": "message",
-  "message_ask_user": "question"
+  "message_notify_user": "text",
+  "message_ask_user": "text",
+  "browse_web": "task"
+  // browser_view intentionally absent — the backend tool takes no parameters
 };
 
 /**
@@ -76,9 +80,11 @@ export const TOOL_NAME_MAP: {[key: string]: string} = {
   "shell": "Terminal",
   "file": "File",
   "browser": "Browser",
-  "info": "Information",
+  "search": "Information",
   "message": "Message",
-  "mcp": "MCP Tool"
+  "mcp": "MCP Tool",
+  // Lean tool profile: browsing delegated to a sub-agent, rendered like "browser"
+  "delegation": "Browser"
 };
 
 import SearchIcon from '../components/icons/SearchIcon.vue';
@@ -95,7 +101,8 @@ export const TOOL_ICON_MAP: {[key: string]: any} = {
   "browser": BrowserIcon,
   "search": SearchIcon,
   "message": "",
-  "mcp": SearchIcon  // 暂时使用搜索图标，可以后续创建专门的MCP图标
+  "mcp": SearchIcon,  // Reuses the search icon; no dedicated MCP icon exists yet
+  "delegation": BrowserIcon
 };
 
 import ShellToolView from '@/components/toolViews/ShellToolView.vue';
@@ -112,5 +119,8 @@ export const TOOL_COMPONENT_MAP: {[key: string]: any} = {
   "file": FileToolView,
   "search": SearchToolView,
   "browser": BrowserToolView,
-  "mcp": McpToolView
+  "mcp": McpToolView,
+  // The backend renders delegation's bookend events as BrowserToolContent
+  // (see agent_task_runner.py), so the browser view already fits.
+  "delegation": BrowserToolView
 };

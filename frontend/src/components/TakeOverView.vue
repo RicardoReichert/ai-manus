@@ -19,12 +19,13 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onBeforeUnmount } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import VNCViewer from './VNCViewer.vue';
 import { eventBus } from '../utils/eventBus';
 
 const route = useRoute();
+const router = useRouter();
 const { t } = useI18n();
 
 // Takeover state
@@ -73,6 +74,13 @@ const exitTakeOver = () => {
     takeOverActive.value = false;
     currentSessionId.value = '';
     currentUrlResolver.value = undefined;
+    // shouldShow also reads ?vnc=1 off the route (entering via URL/refresh) —
+    // without stripping it here, the overlay would come right back on the
+    // next re-render since the route query is untouched by the state above.
+    if (route.query.vnc === '1') {
+        const { vnc: _vnc, ...rest } = route.query;
+        router.replace({ query: rest });
+    }
 };
 
 // Expose sessionId for parent component to use

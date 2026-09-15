@@ -109,12 +109,21 @@ const slashPositionStyle = ref<Record<string, string>>({})
 let slashCommand: ((item: SlashItem) => void) | null = null
 let slashRange: Range | null = null
 
-const plusMenuItems: SlashMenuItem[] = [
+const ALL_PLUS_MENU_ITEMS: SlashMenuItem[] = [
   { id: 'add_local_files', titleKey: 'Add local files' },
   { id: 'from_library', titleKey: 'From Library' },
   { id: 'recent_tasks', titleKey: 'Recent Tasks' },
   { id: 'plan', titleKey: 'Plan (Ctrl+/)' },
 ]
+// "Plan" only does anything where a PlanPanel is actually mounted to react
+// to UI_OPEN_PLAN_PANEL (ChatPage/SharePage, gated on the plan itself having
+// steps — see ComputerPanelContent.vue). ChatBox is also used on
+// Home/Project/Claw, where the item and the Ctrl+/ shortcut were a
+// no-op with no feedback; hiding it there is more honest than a click
+// that silently does nothing.
+const plusMenuItems = computed(() =>
+  props.hasPlanPanel ? ALL_PLUS_MENU_ITEMS : ALL_PLUS_MENU_ITEMS.filter((i) => i.id !== 'plan')
+)
 const plusMenuPositionStyle = {
   position: 'absolute',
   bottom: 'calc(100% + 8px)',
@@ -131,11 +140,15 @@ const props = withDefaults(defineProps<{
   /** Manus session detail uses "Send message to Manus"; home keeps the task prompt. */
   placeholder?: string
   dense?: boolean
+  /** Whether a PlanPanel is mounted alongside this ChatBox to react to the
+   * "+" menu's Plan item / Ctrl+/ shortcut — see ALL_PLUS_MENU_ITEMS above. */
+  hasPlanPanel?: boolean
 }>(), {
   placeholder: undefined,
   dense: false,
   hideStopButton: false,
   allowSendFilesOnly: false,
+  hasPlanPanel: false,
 })
 
 const placeholderText = computed(() => props.placeholder || t('Assign a task or type / to see more'))
@@ -341,7 +354,7 @@ const editor = useEditor({
           return true
         }
       }
-      if (event.key === '/' && (event.ctrlKey || event.metaKey)) {
+      if (props.hasPlanPanel && event.key === '/' && (event.ctrlKey || event.metaKey)) {
         event.preventDefault()
         openPlanPanel()
         return true

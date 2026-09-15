@@ -1,5 +1,5 @@
 // Authentication utility functions
-import type { User, UserRole } from '../api/auth'
+import type { User } from '../api/auth'
 import { i18n } from '../composables/useI18n'
 
 
@@ -9,69 +9,6 @@ import { i18n } from '../composables/useI18n'
 export function getUserDisplayName(user: User | null): string {
   if (!user) return 'Guest'
   return user.fullname || user.email || 'Unknown User'
-}
-
-/**
- * Get user role display name
- */
-export function getRoleDisplayName(role: UserRole): string {
-  const roleNames: Record<UserRole, string> = {
-    admin: 'Administrator',
-    user: 'User'
-  }
-  return roleNames[role] || role
-}
-
-/**
- * Check if user account is expired or needs attention
- */
-export function getUserAccountStatus(user: User | null): {
-  isValid: boolean
-  isActive: boolean
-  needsAttention: boolean
-  message?: string
-} {
-  if (!user) {
-    return {
-      isValid: false,
-      isActive: false,
-      needsAttention: true,
-      message: 'No user data available'
-    }
-  }
-  
-  if (!user.is_active) {
-    return {
-      isValid: false,
-      isActive: false,
-      needsAttention: true,
-      message: 'Account is deactivated'
-    }
-  }
-  
-  return {
-    isValid: true,
-    isActive: true,
-    needsAttention: false
-  }
-}
-
-/**
- * Format user creation date
- */
-export function formatUserDate(dateString: string): string {
-  try {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  } catch {
-    return 'Invalid date'
-  }
 }
 
 /**

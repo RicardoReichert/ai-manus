@@ -7,15 +7,17 @@ which is the boundary that keeps LangChain out of the domain.
 from langchain.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from app.domain.models.message import LLMMessage, Role, ToolCall
+from app.domain.models.model_capabilities import ModelCapabilities
 from app.infrastructure.external.llm.langchain_llm import (
     LangchainLLM,
+    _parallel_tool_calls_kwargs,
     _sanitize_json_schema,
 )
 
 
-def _gateway() -> LangchainLLM:
+def _gateway(**kwargs) -> LangchainLLM:
     # init_chat_model only constructs the client; no network call is made here.
-    return LangchainLLM()
+    return LangchainLLM(**kwargs)
 
 
 class TestToLangChain:
@@ -290,3 +292,43 @@ class TestSanitizeJsonSchema:
         env = out[0]["function"]["parameters"]["properties"]["env"]
         assert "patternProperties" not in env
         assert env["additionalProperties"] == {"type": "boolean"}
+
+
+class TestPerModelTemperatureAndTimeout:
+    def test_default_gateway_uses_the_global_temperature_setting(self):
+        from app.core.config import get_settings
+        gateway = _gateway()
+        assert gateway._model.temperature == get_settings().temperature
+
+    def test_capability_temperature_overrides_the_global_setting(self):
+        gateway = _gateway(capabilities=ModelCapabilities(temperature=0.3))
+        assert gateway._model.temperature == 0.3
+
+    def test_no_request_timeout_by_default(self):
+        """Historical behavior: no client-side timeout anywhere in this chain."""
+        gateway = _gateway()
+        assert gateway.capabilities.request_timeout is None
+
+    def test_capability_request_timeout_is_stored(self):
+        gateway = _gateway(capabilities=ModelCapabilities(request_timeout=180.0))
+        assert gateway.capabilities.request_timeout == 180.0
+
+    def test_construction_does_not_raise_with_a_request_timeout_set(self):
+        """A real regression risk: init_chat_model rejecting the timeout kwarg
+        for some provider would only surface at construction time."""
+        _gateway(capabilities=ModelCapabilities(request_timeout=60.0))
+
+
+class TestParallelToolCallsKwargs:
+    def test_unconstrained_model_gets_no_extra_kwargs(self):
+        assert _parallel_tool_calls_kwargs(ModelCapabilities(), "openai") == {}
+
+    def test_constrained_openai_provider_disables_parallel_calls(self):
+        caps = ModelCapabilities(supports_parallel_tool_calls=False)
+        assert _parallel_tool_calls_kwargs(caps, "openai") == {"parallel_tool_calls": False}
+
+    def test_constrained_non_openai_provider_is_left_untouched(self):
+        """Other providers' bind_tools() may not accept this kwarg at all."""
+        caps = ModelCapabilities(supports_parallel_tool_calls=False)
+        assert _parallel_tool_calls_kwargs(caps, "google_genai") == {}
+        assert _parallel_tool_calls_kwargs(caps, None) == {}
