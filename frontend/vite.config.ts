@@ -17,6 +17,11 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['lucide-vue-next'],
   },
+  // @novnc/novnc's WebCodecs feature-detection uses top-level await,
+  // unsupported by esbuild's default (much older) target list.
+  build: {
+    target: 'esnext',
+  },
   server: {
     host: true,
     port: 5173,

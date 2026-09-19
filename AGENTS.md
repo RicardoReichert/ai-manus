@@ -289,14 +289,13 @@ Cursor loads these from `.cursor/agents/*.md` (also compatible with `.claude/age
 
 | Stage | Automation |
 |---|---|
-| Task intake | **Features**: file an issue with the `Agent task` template (`.github/ISSUE_TEMPLATE/agent-task.yml`, goal + acceptance criteria, auto-labeled `agent-task`) → a Cursor automation on the label (or an `@cursor` comment) dispatches a Cloud Agent, whose PR closes the issue. **Defects**: nightly regressions self-file `autonomy-regression` issues that enter the same dispatch path. Ad-hoc: `@cursor` on any issue/PR, Slack, cursor.com/agents, or the Cloud Agents API |
+| Task intake | **Features**: file an issue with the `Agent task` template (`.github/ISSUE_TEMPLATE/agent-task.yml`, goal + acceptance criteria, auto-labeled `agent-task`) → a Cursor automation on the label (or an `@cursor` comment) dispatches a Cloud Agent, whose PR closes the issue. Ad-hoc: `@cursor` on any issue/PR, Slack, cursor.com/agents, or the Cloud Agents API |
 | Develop | AI Coding Loop (above) + skills; agent commits and opens the PR itself |
 | Verify (inner) | L1 `stop` hook — the turn cannot end red |
 | Review | L2 guard subagents + platform review bots on the PR |
 | Merge gate | L3 CI (`tests.yml`): offline tests + evals, frontend checks, secret scan, docs-drift, full e2e (API + browser + sandbox); branch protection makes green mandatory |
 | Dependencies | Dependabot (`.github/dependabot.yml`) opens weekly upgrade PRs for uv (backend/sandbox), npm, pip, Docker base images, and Actions; L3 green + auto-merge lands them unattended |
 | Release | `docker-build-and-push.yml` publishes images on merge to `main` and tags (`release` skill covers versioned notes) |
-| Watch | `nightly.yml` reruns the full gate on `main` daily; failures open/append the regression issue automatically |
 
 Reproducibility: `backend/uv.lock`, `sandbox/uv.lock` and `frontend/package-lock.json` are committed; CI installs with `uv sync --frozen` / `npm ci`; Dependabot keeps them fresh. Doc embeds are generated (`update_doc.sh`) and drift-gated in CI.
 
@@ -310,7 +309,7 @@ Four gate layers remove the human from the verify-fix loop; each outer layer bac
 |---|---|---|
 | L1 — session gate | `.cursor/hooks.json` `stop` hook → `.cursor/hooks/verify_on_stop.py` | The agent cannot end a turn while backend offline tests/evals or frontend unit tests fail for areas touched by **unpushed** work (uncommitted + commits ahead of `@{upstream}`). Once pushed, CI owns verification and the gate passes in milliseconds. Failures come back as an auto follow-up with the failure tail (max 3 loops). Fail-open on missing env — environment problems must not trap the agent. |
 | L2 — guard subagents | `.cursor/agents/` (`test-pyramid`, `harness-reviewer`, `ui-parity-auditor`) | Heavy verification (e2e layers) and semantic review (invariants, UI parity) on demand, per the AI Coding Loop. |
-| L3 — CI hard gate | `.github/workflows/tests.yml` + `nightly.yml` | Every push/PR to `main`/`develop` runs backend offline tests + evals, frontend unit/type-check/lint/build, gitleaks secret scan, docs-drift, and full-stack e2e (API + browser + sandbox API tests) against the dev compose stack. Nightly reruns it all on `main` and files/updates an `autonomy-regression` issue on failure. |
+| L3 — CI hard gate | `.github/workflows/tests.yml` | Every push/PR to `main`/`develop` runs backend offline tests + evals, frontend unit/type-check/lint/build, gitleaks secret scan, docs-drift, and full-stack e2e (API + browser + sandbox API tests) against the dev compose stack. |
 | L4 — platform | Branch protection + review bots (one-time human setup on GitHub/Cursor) | PRs merge only when L3 is green; automated review comments feed back into agent runs. |
 
 Offline test selection is exclusion-based (`--ignore` the three server-dependent files + `-m "not e2e"`) and must stay in sync across the hook, the `test-pyramid` subagent, and CI.
